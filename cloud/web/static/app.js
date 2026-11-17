@@ -87,9 +87,9 @@ function modelName(id) {
 }
 
 function level(p, severity) {
-  if (severity === 'critical' || p >= 90) return { name: '接近上限', color: 'var(--crit)', cls: 'h-crit', rank: 2 }
-  if (severity === 'warning' || p >= 75) return { name: '用量偏高', color: 'var(--warn)', cls: 'h-warn', rank: 1 }
-  return { name: '健康', color: 'var(--live)', cls: 'h-ok', rank: 0 }
+  if (severity === 'critical' || p >= 90) return { name: '接近上限', key: 'crit', rank: 2 }
+  if (severity === 'warning' || p >= 75) return { name: '用量偏高', key: 'warn', rank: 1 }
+  return { name: '健康', key: 'ok', rank: 0 }
 }
 
 function limitTitle(l) {
@@ -208,15 +208,14 @@ function renderOverview(now) {
     el('div', { class: 'title' },
       el('h1', { text: 'Claude 用量' }),
       plan && el('span', { class: 'plan', text: plan }),
-      worst && el('span', { class: 'health ' + worst.cls, text: worst.name })),
-    usage && el('div', { class: 'sub muted', text: `${usage.device_name} · ${now - usage.fetched_at < 3600000 ? hm(usage.fetched_at) : ago(usage.fetched_at, now)} 上报` })))
+      worst && el('span', { class: 'health h-' + worst.key, text: worst.name })),
+    usage && el('div', { class: 'sub muted', text: `${now - usage.fetched_at < 3600000 ? hm(usage.fetched_at) : ago(usage.fetched_at, now)} 上报` })))
   if (o.usage.length > 1) {
     out.push(chips(o.usage.map((u) => [u.device_id, u.device_name]), usage.device_id, (k) => { state.usageDevice = k; render() }))
   }
 
-  const cards = (usage ? usage.limits : []).map((l) => limitCard(l, now))
-  cards.push(devicesCard(o, now))
-  out.push(el('section', { class: 'grid' }, cards))
+  if (usage) out.push(el('section', { class: 'limits' }, usage.limits.map((l) => limitCard(l, now))))
+  out.push(devicesStrip(o, now))
 
   if (!o.usage.length && !o.sessions.length) {
     out.push(el('div', { class: 'notice', text: '还没有 Mac 上报数据。在 Mac 上的 Quotabar 右上角登录，并在设置里打开“上报额度和会话”，额度和会话就会出现在这里。' }))
@@ -233,7 +232,7 @@ function renderOverview(now) {
       el('h2', { text: '最近的会话' }),
       chips(filters, state.overviewFilter, (k) => { state.overviewFilter = k; render() })),
     sessionList(list, now),
-    o.sessions.length >= 30 && el('a', { class: 'link more', href: '#/sessions', text: '查看全部会话 →' })))
+    o.sessions.length >= 30 && el('a', { class: 'link more', href: '#/sessions', text: '查看全部会话' })))
   return out
 }
 
@@ -242,34 +241,31 @@ function limitCard(l, now) {
   const p = Math.round(l.percent)
   const win = WINDOW[l.kind]
   const elapsed = win && l.resets_at ? Math.min(Math.max(1 - (l.resets_at - now) / win, 0), 1) : null
-  return el('div', { class: 'card' },
+  return el('div', { class: 'limit l-' + lv.key },
     el('div', { class: 'label', text: limitTitle(l) }),
-    el('div', { class: 'big', style: `color:${lv.color}`, text: p + '%' }),
+    el('div', { class: 'big' }, String(p), el('small', { text: '%' })),
     el('div', { class: 'meter', role: 'img', 'aria-label': `已用 ${p}%，${lv.name}` + (elapsed != null ? `；时间过了 ${Math.round(elapsed * 100)}%` : '') },
-      el('div', { class: 'fill', style: `width:${Math.min(p, 100)}%;background:${lv.color}` }),
+      el('div', { class: 'fill', style: `width:${Math.min(p, 100)}%` }),
       elapsed != null && el('span', { class: 'tick', style: `left:${elapsed * 100}%`, title: `时间过了 ${Math.round(elapsed * 100)}%` })),
     l.resets_at && el('div', { class: 'reset' },
       el('b', { text: resetMoment(l.resets_at, now) + ' 重置' }),
-      l.resets_at > now ? ` · 还有 ${duration(l.resets_at - now)}` : ' · 等待 Mac 刷新'))
+      el('span', { text: l.resets_at > now ? `还有 ${duration(l.resets_at - now)}` : '等待 Mac 刷新' })))
 }
 
-function devicesCard(o, now) {
+/** 每台 Mac 一个小胶囊：在线圆点 + 名字 + 状态 */
+function devicesStrip(o, now) {
+  if (!o.devices.length) return null
   const live = {}
   for (const s of o.sessions) if (isLive(s)) live[s.device_id] = (live[s.device_id] || 0) + 1
-  return el('div', { class: 'card' },
-    el('div', { class: 'label', text: '设备' }),
-    o.devices.length
-      ? o.devices.map((d) => el('div', { class: 'dev' },
-          el('div', { style: 'min-width:0' },
-            el('div', { class: 'name', text: d.name }),
-            el('div', { class: 'sub muted', text: (live[d.id] ? `${live[d.id]} 个会话进行中 · ` : '') + ago(d.last_seen_at, now) })),
-          el('span', { class: 'online' + (d.online ? ' on' : ''), text: d.online ? '在线' : '离线' })))
-      : el('div', { class: 'sub', text: '还没有登录的 Mac' }))
+  return el('div', { class: 'devices' }, o.devices.map((d) => el('div', { class: 'devchip' },
+    el('span', { class: 'dot' + (d.online ? ' on' : ''), 'aria-hidden': 'true' }),
+    el('b', { text: d.name }),
+    el('span', { class: 'muted', text: (d.online ? '在线' : '离线，' + ago(d.last_seen_at, now)) + (live[d.id] ? `，${live[d.id]} 个会话进行中` : '') }))))
 }
 
 /** 按天分组的会话列表，整行可点。只有一台 Mac 时不显示设备名 */
 function sessionList(list, now) {
-  if (!list.length) return el('div', { class: 'panel' }, el('div', { class: 'empty', text: '没有会话' }))
+  if (!list.length) return el('div', { class: 'empty', text: '没有会话' })
   const multi = (state.overview?.devices.length || 0) > 1
   const groups = []
   for (const s of list) {
@@ -279,21 +275,20 @@ function sessionList(list, now) {
     if (!g || g.key !== key) groups.push(g = { key, items: [] })
     g.items.push(s)
   }
-  return el('div', { class: 'panel' }, groups.map((g) => [
+  return el('div', { class: 'list' }, groups.map((g) => el('div', { class: 'group' },
     el('div', { class: 'day' },
-      el('span', { text: dayLabel(g.key, now) }),
-      el('span', { class: 'num', text: `${g.items.length} 个会话 · ${fmtTokens(g.items.reduce((a, s) => a + totalTokens(s), 0))}` })),
-    g.items.map((s) => sessionRow(s, now, multi)),
-  ]))
+      el('b', { text: dayLabel(g.key, now) }),
+      el('span', { class: 'num', text: `${g.items.length} 个会话，${fmtTokens(g.items.reduce((a, s) => a + totalTokens(s), 0))}` })),
+    g.items.map((s) => sessionRow(s, now, multi)))))
 }
 
 function sessionRow(s, now, multi) {
-  const meta = [s.title ? s.project : null, modelName(s.model), multi && s.device_name].filter(Boolean).join(' · ')
+  const meta = [s.title ? s.project : null, modelName(s.model), multi ? s.device_name : null].filter(Boolean)
   return el('a', { class: 'srow s-' + s.status, href: '#/sessions/' + encodeURIComponent(s.id) },
     statusTag(s.status),
     el('div', { class: 'main' },
       el('div', { class: 't', text: s.title || s.project }),
-      el('div', { class: 'meta' }, meta, s.status_detail && el('span', { class: 'detail', text: (meta ? ' · ' : '') + s.status_detail }))),
+      el('div', { class: 'meta' }, meta.map((m) => el('span', { text: m })), s.status_detail && el('span', { class: 'detail', text: s.status_detail }))),
     el('div', { class: 'side' },
       el('div', { class: 'tok num', text: fmtTokens(totalTokens(s)) }),
       el('div', { class: 'when num', text: sessionTime(s, now) })))
@@ -358,7 +353,7 @@ function renderDetail(now) {
     el('div', { class: 'card' }, el('dl', { class: 'kv' }, rows.map(([k, v]) => [el('dt', { text: k }), el('dd', { class: 'num', text: v })]))),
     el('section', {},
       el('h2', { text: '状态记录' }),
-      el('div', { class: 'panel' },
+      el('div', {},
         d.events.length
           ? el('ul', { class: 'timeline' }, d.events.map((e) => el('li', {},
               el('span', { class: 'when num', text: (sameDay(e.ts, now) ? '' : md(e.ts) + ' ') + hm(e.ts) }),
