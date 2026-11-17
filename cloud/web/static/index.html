@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quotabar</title>
+<style>
+:root{--bg:#FAFAF8;--fg:#1F1F1E;--fg2:#383836;--line:#E9E9E6;--card:#FFFFFF;--btn:#1F1F1E;--btnfg:#FFFFFF;--live:#23864D}
+@media (prefers-color-scheme: dark){:root{--bg:#1C1C1E;--fg:#F2F2F0;--fg2:#CFCFCB;--line:#2E2E30;--card:#252527;--btn:#F2F2F0;--btnfg:#1C1C1E;--live:#4FCB85}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif}
+main{max-width:720px;margin:0 auto;padding:40px 16px;display:flex;flex-direction:column;gap:24px}
+h1{margin:0;font-size:26px}
+h2{margin:0 0 8px;font-size:17px}
+p{margin:0;color:var(--fg2);line-height:1.6}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:40px;padding:0 16px;border-radius:10px;border:none;
+  background:var(--btn);color:var(--btnfg);font:inherit;font-weight:600;text-decoration:none;cursor:pointer}
+.btn.secondary{background:transparent;color:var(--fg);border:1px solid var(--line)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:4px 16px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:none}
+.sub{font-size:13px;color:var(--fg2)}
+.tag{font-size:12px;font-weight:600;color:var(--live)}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <section id="out" hidden>
+    <h1>Quotabar</h1>
+    <p style="margin:12px 0 20px">在网站和手机上查看 Claude 额度、会话和执行状态。</p>
+    <a class="btn" href="/login">登录</a>
+  </section>
+
+  <section id="in" hidden style="display:flex;flex-direction:column;gap:24px">
+    <div class="top">
+      <div>
+        <h1 id="name"></h1>
+        <p id="email" class="sub"></p>
+      </div>
+      <button id="logout" class="btn secondary" type="button">退出登录</button>
+    </div>
+    <div>
+      <h2>已登录的设备</h2>
+      <div id="devices" class="card"></div>
+    </div>
+    <p class="sub">额度和会话会在 Mac 上的 Quotabar 登录后出现在这里。</p>
+  </section>
+</main>
+<script>
+const kindName = { mac: 'Mac', ios: 'iPhone', web: '网页' }
+function ago(ts) {
+  if (!ts) return '从未'
+  const m = Math.round((Date.now() - ts) / 60000)
+  if (m < 1) return '刚刚'
+  if (m < 60) return m + ' 分钟前'
+  if (m < 1440) return Math.round(m / 60) + ' 小时前'
+  return Math.round(m / 1440) + ' 天前'
+}
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag)
+  Object.assign(e, attrs || {})
+  for (const c of children) e.append(c)
+  return e
+}
+async function load() {
+  const me = await fetch('/api/me')
+  if (me.status === 401) { document.getElementById('out').hidden = false; return }
+  const { user } = await me.json()
+  document.getElementById('name').textContent = user.name || '已登录'
+  document.getElementById('email').textContent = user.email || ''
+  document.getElementById('in').hidden = false
+  const { devices, current } = await (await fetch('/api/devices')).json()
+  const box = document.getElementById('devices')
+  box.replaceChildren(...devices.map((d) => {
+    const right = d.id === current
+      ? el('span', { className: 'tag', textContent: '当前设备' })
+      : el('button', { className: 'btn secondary', type: 'button', textContent: '移除', onclick: () => revoke(d.id) })
+    return el('div', { className: 'row' },
+      el('div', {}, el('div', { textContent: d.name }), el('div', { className: 'sub', textContent: kindName[d.kind] + ' · ' + ago(d.last_seen_at) })),
+      right)
+  }))
+}
+async function revoke(id) {
+  await fetch('/api/devices/' + id, { method: 'DELETE' })
+  load()
+}
+document.getElementById('logout').onclick = async () => {
+  await fetch('/api/auth/logout', { method: 'POST' })
+  location.reload()
+}
+load()
+</script>
+</body>
+</html>
