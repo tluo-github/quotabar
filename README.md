@@ -8,7 +8,7 @@ English | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [한국�
 
 Quotabar shows the same numbers as `/usage` in Claude Code: how much of your 5-hour session and weekly limits you've used, and when each one resets. Click it for details, your recent Claude Code sessions and token stats.
 
-[![Quotabar demo](docs/demo-en.gif)](docs/demo-en.mp4)
+<a href="docs/demo-en.mp4"><img src="docs/demo-en.gif" width="420" alt="Quotabar demo"></a>
 
 <sub>Click the animation for the MP4 video.</sub>
 
@@ -90,14 +90,16 @@ Development helpers:
 
 ```bash
 # Render every tab (light and dark) to PNG without touching the menu bar
-.build/release/Quotabar --snapshot /tmp/qb -AppleLanguages '(ja)' -stage YES -demo YES
+.build/release/Quotabar --snapshot /tmp/qb -AppleLanguages '(ja)' -stage YES -demo YES -scale 3
+# Regenerate the README screenshots and demo videos for all four languages (needs ffmpeg)
+scripts/make-demo.sh
 # A window with the real panel on a clean background, for recording demos
 .build/release/Quotabar --showcase -demo YES
 # Redraw the app icon
 swift scripts/make-icon.swift
 ```
 
-`-demo YES` replaces session titles and project names with sample text so screenshots don't expose your own projects; `-offline YES` uses the cached usage instead of calling the API.
+`-demo YES` replaces session titles and project names with sample text so screenshots don't expose your own projects; `-offline YES` uses the cached usage instead of calling the API; `-scale 3` renders at 3× pixel density.
 
 `./build.sh release` signs with your **Developer ID Application** certificate, notarizes and staples when that certificate is in your keychain (one-time setup: `xcrun notarytool store-credentials quotabar-notary --team-id <TEAM_ID>`); otherwise it builds an ad-hoc signed app.
 

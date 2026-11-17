@@ -87,22 +87,37 @@ enum Fmt {
     private static var md: DateFormatter { cached("M/d", "Md") }
     private static var mdWeek: DateFormatter { cached("M月d日 EEE", "EEEMMMd") }
     private static var mdShort: DateFormatter { cached("M/d HH:mm", "Mdjm") }
+    private static var weekday: DateFormatter { cached("EEEE", "EEEE") }
 
     static func time(_ d: Date) -> String { hm.string(from: d) }
     static func timeWithSeconds(_ d: Date) -> String { hms.string(from: d) }
-    static func shortDay(_ d: Date) -> String { md.string(from: d) }
+    /// 图表横轴：所有语言统一 11/17（韩语模板会给出 "11. 17." 太挤）
+    static func shortDay(_ d: Date) -> String { "\(calendar.component(.month, from: d))/\(calendar.component(.day, from: d))" }
 
     /// 会话列表里用：今天只显示时分，其他日子带日期。
     static func sessionTime(_ d: Date, now: Date) -> String {
         calendar.isDate(d, inSameDayAs: now) ? hm.string(from: d) : mdShort.string(from: d)
     }
 
-    /// 重置时间：「今天 13:49」「明天 02:59」「11月22日 周六 02:59」/ "Today 1:49 PM"
+    /// 重置时间：「今天 13:49」「明天 02:59」「本周日 03:00」「下周一 03:00」「11月30日 周日 03:00」
+    /// 其他语言：Today 1:49 PM / Tomorrow / Sunday 3:00 AM / 完整日期。
+    /// 一周以内只说星期几（中文按周一开始算「本周 / 下周」），比日期好懂。
     static func resetMoment(_ d: Date, now: Date) -> String {
         if calendar.isDate(d, inSameDayAs: now) { return L("今天 ", "Today ", ja: "今日 ", ko: "오늘 ") + hm.string(from: d) }
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
            calendar.isDate(d, inSameDayAs: tomorrow) {
             return L("明天 ", "Tomorrow ", ja: "明日 ", ko: "내일 ") + hm.string(from: d)
+        }
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: d)).day ?? 99
+        if days > 0 && days < 7 {
+            if isChinese {
+                var monday = calendar
+                monday.firstWeekday = 2
+                let week = monday.isDate(d, equalTo: now, toGranularity: .weekOfYear) ? "本周" : "下周"
+                let names = ["日", "一", "二", "三", "四", "五", "六"]
+                return week + names[calendar.component(.weekday, from: d) - 1] + " " + hm.string(from: d)
+            }
+            return weekday.string(from: d) + " " + hm.string(from: d)
         }
         return mdWeekHm.string(from: d)
     }
@@ -125,8 +140,8 @@ enum Fmt {
             if hours > 0 { return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h" }
             return minutes > 0 ? "\(minutes) min" : "<1 min"
         case .ja:
-            if days > 0 { return hours > 0 ? "\(days)日 \(hours)時間" : "\(days)日" }
-            if hours > 0 { return minutes > 0 ? "\(hours)時間 \(minutes)分" : "\(hours)時間" }
+            if days > 0 { return hours > 0 ? "\(days)日\(hours)時間" : "\(days)日" }
+            if hours > 0 { return minutes > 0 ? "\(hours)時間\(minutes)分" : "\(hours)時間" }
             return minutes > 0 ? "\(minutes)分" : "1分未満"
         case .ko:
             if days > 0 { return hours > 0 ? "\(days)일 \(hours)시간" : "\(days)일" }
@@ -135,23 +150,15 @@ enum Fmt {
         case .zh:
             break
         }
-        if days > 0 { return hours > 0 ? "\(days) 天 \(hours) 小时" : "\(days) 天" }
-        if hours > 0 { return minutes > 0 ? "\(hours) 小时 \(minutes) 分钟" : "\(hours) 小时" }
-        if minutes > 0 { return "\(minutes) 分钟" }
-        return "不到 1 分钟"
-    }
-
-    /// 紧凑时长，用在空间小的地方：「24分钟」「7小时15分」「2天16小时」
-    static func compactDuration(_ seconds: TimeInterval) -> String {
-        let total = Int(seconds.rounded())
-        let days = total / 86400
-        let hours = (total % 86400) / 3600
-        let minutes = (total % 3600) / 60
-        if !isChinese { return duration(seconds) }
+        // 面板窄，统一紧凑写法：「4天9小时」「1小时9分」「24分钟」
         if days > 0 { return hours > 0 ? "\(days)天\(hours)小时" : "\(days)天" }
         if hours > 0 { return minutes > 0 ? "\(hours)小时\(minutes)分" : "\(hours)小时" }
-        return minutes > 0 ? "\(minutes)分钟" : "<1分钟"
+        if minutes > 0 { return "\(minutes)分钟" }
+        return "不到1分钟"
     }
+
+    /// 和 duration 同一写法（以前两套写法不一致，已统一）
+    static func compactDuration(_ seconds: TimeInterval) -> String { duration(seconds) }
 
     /// 日期分组标题：「今天」「昨天」「11月15日 周日」
     static func dayLabel(_ d: Date, now: Date) -> String {

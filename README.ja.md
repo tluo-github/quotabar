@@ -8,9 +8,9 @@
 
 Quotabar は Claude Code の `/usage` と同じ数値を表示します。5 時間のセッション枠と週間上限をどれだけ使ったか、それぞれいつリセットされるかがひと目でわかります。クリックすると詳細、最近の Claude Code セッション、トークン統計を確認できます。
 
-[![Quotabar デモ](docs/demo-en.gif)](docs/demo-en.mp4)
+<a href="docs/demo-ja.mp4"><img src="docs/demo-ja.gif" width="420" alt="Quotabar デモ"></a>
 
-<sub>アニメーションをクリックすると MP4 動画を再生できます（英語 UI）。</sub>
+<sub>アニメーションをクリックすると MP4 動画を再生できます。</sub>
 
 <p>
   <img src="docs/usage-ja.png" width="24%" alt="使用量">

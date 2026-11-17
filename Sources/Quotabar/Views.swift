@@ -47,15 +47,11 @@ struct ContentView: View {
                     // 面板固定高度（见 panelHeight）。高度若在面板打开后再变，macOS 会固定窗口底边，
                     // 顶边就会离开状态栏出现空隙，所以不做动态高度。内容多的页（会话）在里面滚动。
                     ScrollView {
-                        Group {
-                            switch tab {
-                            case .usage: UsageTab(now: ctx.date, openSettings: { showSettings = true })
-                            case .sessions: SessionsTab(now: ctx.date)
-                            case .stats: StatsTab(now: ctx.date)
-                            }
+                        switch tab {
+                        case .usage: page(UsageTab(now: ctx.date, openSettings: { showSettings = true }))
+                        case .sessions: page(SessionsTab(now: ctx.date))
+                        case .stats: page(StatsTab(now: ctx.date))
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
                     }
                     .scrollIndicators(.automatic)
                 }
@@ -71,22 +67,24 @@ struct ContentView: View {
         .onAppear { store.refreshIfStale() }
     }
 
+    private func page(_ content: some View) -> some View {
+        content.frame(maxWidth: .infinity, alignment: .leading).padding(14)
+    }
+
     private var header: some View {
         HStack(spacing: 8) {
             Text(L("Claude 用量", "Claude Usage", ja: "Claude 使用量", ko: "Claude 사용량")).font(.system(size: 13, weight: .semibold))
+                .lineLimit(1).fixedSize()
             if let plan = store.usage?.plan {
                 Text(plan.prefix(1).uppercased() + plan.dropFirst().lowercased())
-                    .font(.system(size: 12, weight: .semibold))
-                    .tracking(-0.2)
-                    .foregroundStyle(.primary)
+                    .font(Theme.label)
+                    .foregroundStyle(Theme.text2)
+                    .lineLimit(1).fixedSize()
             }
             if let u = store.usage {
                 HealthBadge(level: u.overallLevel)
             }
-            Spacer()
-            if let t = store.lastUpdated {
-                Text(L("\(Fmt.time(t)) 更新", Fmt.time(t))).lineLimit(1).help(L("上次更新时间", "Last updated", ja: "最終更新", ko: "마지막 업데이트")).font(Theme.caption).foregroundStyle(Theme.text2)
-            }
+            Spacer(minLength: 4)
             if store.isLoading || store.isScanning {
                 ProgressView().controlSize(.mini).frame(width: 24, height: 24)
             } else {
@@ -101,6 +99,13 @@ struct ContentView: View {
             IconButton(symbol: "gearshape", help: L("设置", "Settings", ja: "設定", ko: "설정")) { showSettings = true }
             IconButton(symbol: "globe", help: L("在浏览器打开 claude.ai 用量页", "Open claude.ai usage page", ja: "claude.ai の使用量ページを開く", ko: "claude.ai 사용량 페이지 열기")) {
                 NSWorkspace.shared.open(URL(string: "https://claude.ai/settings/usage")!)
+            }
+            // 更新时间放底栏：标题栏不挤，也不会和蓝色的重置时间混淆
+            if let t = store.lastUpdated {
+                Text(L("\(Fmt.time(t)) 更新", "Updated \(Fmt.time(t))", ja: "\(Fmt.time(t)) 更新", ko: "\(Fmt.time(t)) 업데이트"))
+                    .font(Theme.caption).foregroundStyle(Theme.text2)
+                    .lineLimit(1)
+                    .padding(.leading, 6)
             }
             Spacer()
             Button(L("退出", "Quit", ja: "終了", ko: "종료")) { NSApp.terminate(nil) }
@@ -145,10 +150,14 @@ struct UsageTab: View {
             }
 
             if let u = store.usage {
+                let roomy = u.limits.count <= 2
                 VStack(spacing: 0) {
                     ForEach(Array(u.limits.enumerated()), id: \.element.id) { i, item in
                         if i > 0 { Hairline() }
-                        LimitCard(item: item, now: now).padding(.vertical, 12)
+                        // 第一张卡顶部不再加边距：页面已有 14pt，叠加会比其他页空一倍
+                        LimitCard(item: item, now: now, roomy: roomy)
+                            .padding(.top, i == 0 ? 0 : (roomy ? 16 : 12))
+                            .padding(.bottom, roomy ? 16 : 12)
                     }
                 }
                 Hairline()
@@ -208,6 +217,7 @@ func sourcesLine(_ rows: [BreakdownRow]) -> String? {
 struct LimitCard: View {
     let item: LimitItem
     let now: Date
+    var roomy = false   // 额度少（≤2 条）时数字更大、间距更松
 
     private var level: Level { Level(percent: item.percent, severity: item.severity) }
 
@@ -224,35 +234,46 @@ struct LimitCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(item.title).font(Theme.label).foregroundStyle(Theme.text2)
-                Spacer()
-                if let r = item.resetsAt {
-                    Text(L("\(Fmt.resetMoment(r, now: now)) 重置", "Resets \(Fmt.resetMoment(r, now: now))", ja: "\(Fmt.resetMoment(r, now: now)) にリセット", ko: "\(Fmt.resetMoment(r, now: now)) 재설정")).font(Theme.caption).foregroundStyle(Theme.text2)
-                }
-            }
+        VStack(alignment: .leading, spacing: roomy ? 8 : 6) {
+            Text(item.title).font(Theme.label).foregroundStyle(Theme.text2)
 
-            HStack(alignment: .firstTextBaseline) {
-                Text(Fmt.percent(item.percent)).font(Theme.hero).foregroundStyle(level.color)
-                Spacer()
-                if level != .normal {
-                    StatusChip(level: level, text: level.label)
+            // 百分比 + 进度条同一行。状态文字只在标题栏显示一次（HealthBadge），这里靠颜色表达。
+            // 百分比列按「100%」的宽度占位，几张卡的进度条左端对齐。
+            HStack(alignment: .center, spacing: 12) {
+                ZStack(alignment: .leading) {
+                    Text("100%").hidden()
+                    Text(Fmt.percent(item.percent)).foregroundStyle(level.color)
                 }
+                .font(roomy ? Theme.heroLarge : Theme.hero)
+                // 进度条粗细按重要程度：额度 6 / 项目 4 / 会话 2；竖线 = 时间已过多少
+                UsageBar(fraction: item.percent / 100, marker: elapsed, color: level.color, height: 6)
+                    .help(elapsedText ?? "")
             }
-
-            UsageBar(fraction: item.percent / 100, marker: elapsed, color: level.color)
 
             if let r = item.resetsAt {
-                Text(caption(reset: r)).font(Theme.caption).foregroundStyle(Theme.text2)
+                resetLine(r).font(Theme.caption).foregroundStyle(Theme.text2).lineLimit(1)
             }
         }
     }
 
-    private func caption(reset r: Date) -> String {
-        var parts = [Fmt.countdown(to: r, now: now)]
-        if let e = elapsed { parts.append(L("时间已过 \(Int((e * 100).rounded()))%", "\(Int((e * 100).rounded()))% of window elapsed", ja: "経過 \(Int((e * 100).rounded()))%", ko: "\(Int((e * 100).rounded()))% 경과")) }
-        return parts.joined(separator: " · ")
+    /// 一句话：「今天 18:50 重置 · 还有 49分钟」，时间用蓝色半粗体
+    private func resetLine(_ r: Date) -> Text {
+        let countdown = Fmt.countdown(to: r, now: now)
+        if r <= now { return Text(countdown) }
+        let moment = Text(Fmt.resetMoment(r, now: now)).fontWeight(.semibold).foregroundColor(Theme.time)
+        switch Lang.current {
+        case .zh: return moment + Text(" 重置 · \(countdown)")
+        case .en: return Text("Resets ") + moment + Text(" · \(countdown)")
+        case .ja: return moment + Text(" にリセット · \(countdown)")
+        case .ko: return moment + Text(" 재설정 · \(countdown)")
+        }
+    }
+
+    private var elapsedText: String? {
+        elapsed.map { e in
+            let p = Int((e * 100).rounded())
+            return L("竖线：时间已过 \(p)%", "Marker: \(p)% of window elapsed", ja: "縦線：経過 \(p)%", ko: "세로선: \(p)% 경과")
+        }
     }
 }
 
@@ -314,11 +335,12 @@ struct SessionsTab: View {
                             SessionRow(session: $0, now: now, maxTokens: maxTokens, mainModel: mainModel)
                         }
                     }
+                    // 行内留 6pt 给悬停背景，整体向外让出，让文字和其他页一样对齐到左边距
+                    .padding(.horizontal, -6)
                 }
 
                 if !list.isEmpty {
                     Text(L("右键会话可以复制恢复命令", "Right-click a session to copy its resume command", ja: "セッションを右クリックすると再開コマンドをコピーできます", ko: "세션을 오른쪽 클릭하면 재개 명령을 복사할 수 있습니다")).font(Theme.caption).foregroundStyle(Theme.text2)
-                        .padding(.leading, 8)
                 }
             } else {
                 LoadingState(text: L("正在读取本机会话日志…", "Reading local session logs…", ja: "ローカルのセッションログを読み込み中…", ko: "로컬 세션 로그를 읽는 중…"))
@@ -355,14 +377,14 @@ struct SessionRow: View {
     var body: some View {
         let s = session
         let active = s.isActive(now: now)
-        HStack(alignment: .top, spacing: 8) {
-            Circle()
-                .fill(active ? Theme.live : Color.clear)
-                .frame(width: 6, height: 6)
-                .padding(.top, 5)
-
+        HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    if active {
+                        Circle().fill(Theme.live).frame(width: 6, height: 6)
+                            .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 0.5 }
+                            .padding(.trailing, 6)
+                    }
                     Text(s.title).font(Theme.bodyMedium).lineLimit(1)
                     Spacer(minLength: 8)
                     Text(Fmt.tokens(s.tokens.total)).font(Theme.number)
@@ -370,12 +392,9 @@ struct SessionRow: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(meta).font(Theme.caption).foregroundStyle(Theme.text2).lineLimit(1)
                     Spacer(minLength: 8)
-                    if active {
-                        Text(L("进行中", "Active", ja: "進行中", ko: "진행 중")).font(Theme.caption.weight(.medium)).foregroundStyle(Theme.live)
-                    } else {
-                        Text(Fmt.compactDuration(s.end.timeIntervalSince(s.start)))
-                            .font(Theme.caption).foregroundStyle(Theme.text2).monospacedDigit()
-                    }
+                    // 进行中只靠标题前的绿点表示，这里和其他会话一样显示时长
+                    Text(Fmt.compactDuration(s.end.timeIntervalSince(s.start)))
+                        .font(Theme.caption).foregroundStyle(Theme.text2).monospacedDigit()
                 }
                 // 用量比例条：一眼看出哪个会话用得多
                 UsageBar(fraction: Double(s.tokens.total) / Double(max(1, maxTokens)), marker: nil,
@@ -499,7 +518,8 @@ struct StatsTab: View {
         ]
         if longest > 0 { parts.append(L("最长 ", "longest ", ja: "最長 ", ko: "최장 ") + Fmt.compactDuration(longest)) }
         if let model { parts.append(model) }
-        return parts.joined(separator: " · ")
+        // 每一项内部用不换行空格，折行只发生在「·」之间，不会把 "Opus 5.5" 拆成两行
+        return parts.map { $0.replacingOccurrences(of: " ", with: "\u{00A0}") }.joined(separator: " · ")
     }
 }
 
@@ -512,7 +532,7 @@ struct ShareRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Text(name).font(Theme.body).lineLimit(1).frame(width: 96, alignment: .leading)
-            UsageBar(fraction: fraction, marker: nil, color: Theme.data, height: 6)
+            UsageBar(fraction: fraction, marker: nil, color: Theme.data, height: 4)
             Text(value).font(Theme.number).frame(width: 56, alignment: .trailing)
         }
     }
@@ -546,21 +566,17 @@ struct DailyChart: View {
                                      ? Theme.dataStrong : Theme.data)
             }
             .chartXSelection(value: $selected)
+            // 不要纵轴刻度：具体数值看上方「今天 / 选中那天」，只留一条底线托住柱子
             .chartYAxis {
-                AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { v in
-                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Theme.hairline)
-                    AxisValueLabel {
-                        if let n = v.as(Int.self) {
-                            Text(Fmt.tokens(n)).font(.system(size: 10)).foregroundStyle(Theme.text2)
-                        }
-                    }
+                AxisMarks(values: [0]) { _ in
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Theme.divider)
                 }
             }
             .chartXAxis {
                 AxisMarks(values: .stride(by: .day, count: daily.count <= 7 ? 1 : 5)) { v in
                     AxisValueLabel {
                         if let d = v.as(Date.self) {
-                            Text(Fmt.shortDay(d)).font(.system(size: 10)).foregroundStyle(Theme.text2)
+                            Text(Fmt.shortDay(d)).font(.system(size: 11)).foregroundStyle(Theme.text2)
                         }
                     }
                 }
@@ -597,7 +613,7 @@ struct SettingsView: View {
                 Spacer()
                 Color.clear.frame(width: 44, height: 1)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 14)
             .padding(.vertical, 14)
 
             Hairline()
@@ -613,7 +629,7 @@ struct SettingsView: View {
                     RowDivider()
                     identity
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 14)
                 .padding(.vertical, 14)
             }
             .scrollIndicators(.automatic)
@@ -679,7 +695,7 @@ struct SettingsView: View {
             }
             RowGap()
             SettingsRow {
-                SettingsLabel(L("代理地址", "Proxy address", ja: "プロキシのアドレス", ko: "프록시 주소"), icon: "link")
+                SettingsLabel(L("代理地址", "Proxy address", ja: "プロキシアドレス", ko: "프록시 주소"), icon: "link")
                 Spacer()
                 HStack(spacing: 4) {
                     TextField("127.0.0.1", text: $store.proxyHost)
@@ -730,7 +746,7 @@ struct SettingsView: View {
             }
             RowGap()
             SettingsRow {
-                SettingsLabel(L("已恢复", "Available again", ja: "リセット", ko: "다시 사용 가능"), icon: "arrow.uturn.backward.circle",
+                SettingsLabel(L("已恢复", "Available again", ja: "利用再開", ko: "다시 사용 가능"), icon: "arrow.uturn.backward.circle",
                               inline: L("额度重置后", "after reset", ja: "リセット後", ko: "재설정 후"))
                 Spacer()
                 SwitchToggle(isOn: $store.notifyReset)
@@ -877,7 +893,7 @@ struct RowGap: View {
 struct SwitchToggle: View {
     @Binding var isOn: Bool
     var body: some View {
-        Toggle("", isOn: $isOn).labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Theme.live)
+        Toggle("", isOn: $isOn).labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Theme.toggle)   // 绿色留给额度状态
     }
 }
 
@@ -957,7 +973,7 @@ struct ChipPicker<T: Hashable>: View {
                 let on = selection == value
                 Button { selection = value } label: {
                     Text(title)
-                        .font(.system(size: 10.5, weight: on ? .medium : .regular))
+                        .font(.system(size: 11.5, weight: on ? .medium : .regular))
                         .foregroundStyle(on ? Theme.surface : Theme.text2)
                         .padding(.horizontal, compact ? 6 : 9).padding(.vertical, 3)
                         .frame(minWidth: compact ? 24 : 0)
@@ -979,7 +995,7 @@ struct ChipButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 10.5, weight: .medium))
+                .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(enabled ? Color.primary : Theme.text2)
                 .padding(.horizontal, 10).padding(.vertical, 3)
                 .overlay(Capsule().strokeBorder(Theme.divider, lineWidth: 1))
@@ -1015,28 +1031,17 @@ struct UsageBar: View {
     }
 }
 
-struct StatusChip: View {
-    let level: Level
-    let text: String
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Circle().fill(level.color).frame(width: 5, height: 5)
-            Text(text).font(Theme.caption.weight(.medium))
-        }
-        .foregroundStyle(level.color)
-    }
-}
-
 /// 标题旁边的总体状态：健康 / 用量偏高 / 接近上限
+
 struct HealthBadge: View {
     let level: Level
 
     var body: some View {
         HStack(spacing: 4) {
             Circle().fill(level.color).frame(width: 6, height: 6)
-            Text(level.label).font(.system(size: 10.5, weight: .semibold))
+            Text(level.label).font(.system(size: 11, weight: .semibold)).lineLimit(1)
         }
+        .fixedSize()  // 英文 "Running high" 较长，别被挤成两行
         .foregroundStyle(level.color)
         .padding(.horizontal, 7).padding(.vertical, 2.5)
         .background(Capsule().fill(level.color.opacity(0.12)))

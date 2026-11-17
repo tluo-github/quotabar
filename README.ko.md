@@ -8,9 +8,9 @@
 
 Quotabar는 Claude Code의 `/usage`와 같은 수치를 보여 줍니다. 5시간 세션 구간과 주간 한도를 얼마나 썼는지, 각각 언제 재설정되는지 한눈에 확인할 수 있습니다. 클릭하면 자세한 내용, 최근 Claude Code 세션, 토큰 통계를 볼 수 있습니다.
 
-[![Quotabar 데모](docs/demo-en.gif)](docs/demo-en.mp4)
+<a href="docs/demo-ko.mp4"><img src="docs/demo-ko.gif" width="420" alt="Quotabar 데모"></a>
 
-<sub>애니메이션을 클릭하면 MP4 동영상을 볼 수 있습니다(영어 UI).</sub>
+<sub>애니메이션을 클릭하면 MP4 동영상을 볼 수 있습니다.</sub>
 
 <p>
   <img src="docs/usage-ko.png" width="24%" alt="사용량">

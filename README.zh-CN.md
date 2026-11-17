@@ -8,7 +8,7 @@
 
 Quotabar 显示的数字和 Claude Code 里的 `/usage` 一样：5 小时窗口和每周额度各用了多少、什么时候重置。点开还能看最近的 Claude Code 会话和 token 统计。
 
-[![Quotabar 演示](docs/demo-zh.gif)](docs/demo-zh.mp4)
+<a href="docs/demo-zh.mp4"><img src="docs/demo-zh.gif" width="420" alt="Quotabar 演示"></a>
 
 <sub>点击动图可以看 MP4 视频。</sub>
 
