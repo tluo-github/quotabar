@@ -1,4 +1,4 @@
-# Quotabar Cloud 技术设计（草案）
+# Quotlet Cloud 技术设计（草案）
 
 > 2026-11-17 起草。
 
@@ -7,7 +7,7 @@
 | 事项 | 决定 |
 |---|---|
 | 用户范围 | 先给自己用，以后开放给所有人，所以从一开始就按多用户设计 |
-| 域名 | 不买，用 `app.quotabar.workers.dev`（账号子域名 quotabar，Worker 名 app）。网站和 API 同一个 Worker、同一个域名 |
+| 域名 | 2026-11-18 买了 `quotlet.com`（Cloudflare 注册）。门户 `quotlet.com`，网站和 API 在 `app.quotlet.com`（同一个 Worker `app`）；旧地址 `app.quotabar.workers.dev` 还能用 |
 | Mac 端 | 联网功能默认关闭；登录后上报额度、会话和状态 |
 | 会话状态 | 设置里加一个开关“精确的会话状态”，打开后往 Claude Code 里装 hooks。**必须先登录才能打开**；退出登录时自动卸载 hooks |
 | 远程指令 | 要做（二期）。默认关闭，必须登录后在那台 Mac 上手动开启 |
@@ -18,13 +18,13 @@
 ## 1. 整体结构
 
 ```
-Mac (Quotabar.app)
+Mac (Quotlet.app)
   ├─ 额度：Anthropic /usage（已有）
   ├─ 会话/token：~/.claude/projects（已有）
-  ├─ hooks → Quotabar --hook → events.jsonl → app 监听（新增）
+  ├─ hooks → Quotlet --hook → events.jsonl → app 监听（新增）
   └─ HTTPS 上报 ──────────────┐   （二期再加 WebSocket，接收指令）
                               ▼
-Cloudflare Worker  app.quotabar.workers.dev
+Cloudflare Worker  app.quotlet.com
   ├─ /api/*      接口（Hono 路由）
   ├─ /*          网站静态文件（Workers Static Assets，免费且不计请求数）
   ├─ D1          持久数据
@@ -49,7 +49,7 @@ iOS App：前台用 WebSocket，后台靠 APNs 推送
 在 `~/.claude/settings.json` 的 `hooks` 里加以下几项，命令都是同一个：
 
 ```
-'/Applications/Quotabar.app/Contents/MacOS/Quotabar' --hook   # quotabar-hook
+'/Applications/Quotlet.app/Contents/MacOS/Quotlet' --hook   # quotlet-hook
 ```
 
 | hook 事件 | 状态变成 | 说明 |
@@ -66,14 +66,14 @@ iOS App：前台用 WebSocket，后台靠 APNs 推送
 ### `--hook` 模式
 
 - `App.swift` 在 SwiftUI 启动之前先检查参数：有 `--hook` 就走命令行分支，不启动界面
-- 从 stdin 读 hook 的 JSON（最多读 64KB），只留 `hook_event_name`、`session_id`、`cwd`、`notification_type`、`message`、`tool_name` 和时间戳，追加一行到 `~/Library/Application Support/Quotabar/events.jsonl`
+- 从 stdin 读 hook 的 JSON（最多读 64KB），只留 `hook_event_name`、`session_id`、`cwd`、`notification_type`、`message`、`tool_name` 和时间戳，追加一行到 `~/Library/Application Support/Quotlet/events.jsonl`
 - **不联网**、不阻塞，永远 `exit 0`，目标是 20ms 内退出，不拖慢 Claude Code
 - app 用 `DispatchSource` 盯着这个文件，读到新行就更新本地状态；登录了就上报。文件超过 1MB 时轮转
 
 ### 安装和卸载
 
-- 写入前先把 settings.json 备份成 `settings.json.quotabar-bak`；只合并，不覆盖用户已有的 hooks；用临时文件 + rename 的方式原子写入
-- 用命令末尾的 `# quotabar-hook` 标记认出我们加的条目，卸载时只删这些
+- 写入前先把 settings.json 备份成 `settings.json.quotlet-bak`；只合并，不覆盖用户已有的 hooks；用临时文件 + rename 的方式原子写入
+- 用命令末尾的 `# quotlet-hook` 标记认出我们加的条目，卸载时只删这些
 - app 每次启动检查一次：如果 app 换了位置导致路径不对，自动修好；用户手动删掉了，就把开关显示为关闭
 - 已知代价：用 `JSONSerialization` 重写会打乱 settings.json 里键的顺序和缩进，设置界面上要说明这一点
 
@@ -90,7 +90,7 @@ iOS App：前台用 WebSocket，后台靠 APNs 推送
 所有客户端都用同一个网页登录页 `/login`，上面有 Apple、Google、GitHub 三个按钮：
 
 - **网站**：Google 和 GitHub 走 OAuth 授权码流程（Google 加 PKCE）；Apple 走 `form_post` 回调。GitHub 没有 id_token，用 access token 调 `/user` 和 `/user/emails` 拿用户 id 和已验证邮箱，用完就丢，不保存。服务端校验 id_token（用 WebCrypto 验 RS256 签名，公钥从 Google/Apple 的 JWKS 拉取并缓存）。登录成功后设置 cookie `qb_session`（HttpOnly、Secure、SameSite=Lax）
-- **Mac**：用 `ASWebAuthenticationSession` 打开 `/login?client=mac&state=…&code_challenge=…`。登录后跳回 `quotabar://auth?code=…`，Mac 拿 code 加 verifier 调 `/api/auth/exchange`，换回一个设备 token，存进 Quotabar 自己的钥匙串条目。这个方式不用在 Info.plist 里注册 URL scheme，也不用第三方 SDK
+- **Mac**：用 `ASWebAuthenticationSession` 打开 `/login?client=mac&state=…&code_challenge=…`。登录后跳回 `quotlet://auth?code=…`，Mac 拿 code 加 verifier 调 `/api/auth/exchange`，换回一个设备 token，存进 Quotlet 自己的钥匙串条目。这个方式不用在 Info.plist 里注册 URL scheme，也不用第三方 SDK
 - **iOS**：Apple 用原生的 `ASAuthorizationAppleIDProvider`，拿到 identityToken 后调 `/api/auth/apple`；Google 和 GitHub 和 Mac 一样走 `ASWebAuthenticationSession`，不用引入第三方 SDK
 - token 是 32 字节随机数，数据库只存它的 SHA-256。每次登录都对应 `devices` 表里的一行，可以在网站上逐个吊销
 
@@ -310,7 +310,7 @@ Worker 写完 D1 以后（里程碑 3 起）：调用这个用户的 UserHub 广
 
 ```
 quotabar/
-├─ Sources/Quotabar/          # 现有 Mac app
+├─ Sources/Quotlet/          # 现有 Mac app
 │   ├─ Cloud/CloudClient.swift    登录、上报、钥匙串
 │   ├─ Cloud/HookInstaller.swift  装 / 卸 / 修复 hooks
 │   └─ Cloud/HookEvents.swift     --hook 命令行分支 + 监听 events.jsonl
@@ -342,38 +342,40 @@ Worker 只依赖 Hono（路由）。JWT 签名和校验都用 WebCrypto 自己�
 
 1. 使用 Cloudflare 的免费服务（服务器、数据库）
 2. 开发在线网站、iOS App、Android App
-3. Quotabar 能登录注册
-4. Quotabar 上报数据和会话状态（执行中、执行完）
+3. Quotlet 能登录注册
+4. Quotlet 上报数据和会话状态（执行中、执行完）
 5. 网站和 App 能查看详情、知道会话状态，通过服务器交互
 6. App 能下发指令，比如在外面让某个会话执行（二期）
 
 ### 10.2 用户拍板过的决定（不要再问）
 
 - 先给自己用，以后开放给所有人，按多用户设计
-- 不买域名，地址是 `https://app.quotabar.workers.dev`（Cloudflare 账号子域名 `quotabar`，Worker 名 `app`）。workers.dev 不支持单层的 `quotabar.workers.dev`
-- 目标是全球用户；国内直连 workers.dev 不通，要走代理（Mac 端沿用 Quotabar 已有的代理设置）
+- 域名：原定不买、用 workers.dev；改名后买了 `quotlet.com`。门户 `https://quotlet.com`，仪表盘和 API `https://app.quotlet.com`
+- 目标是全球用户；国内直连 workers.dev 不通，但 `quotlet.com` 和 `app.quotlet.com` 国内不开代理也能打开（2026-11-18 实测）。Mac 端照样沿用已有的代理设置
 - 登录：Apple + Google + GitHub，**先只做 GitHub**；邮箱验证码要等有域名能发信时再说
 - iOS 用 SwiftUI 原生；Android 先用网站 PWA，页面开着时每分钟拉一次，不要求实时推送
 - hooks 开关**必须登录后才能开**（没登录时 hooks 没用处）
 - 远程指令要做（二期），默认关闭，必须登录后在那台 Mac 上手动开启
+- **改名为 Quotlet**（2026-11-18）：quotabar.app 是另一个同名同类的开源工具 QuotaBar。新名 = quota + -let（小），取“低调、小巧”。门户 `quotlet.com`、仪表盘 `app.quotlet.com` 已上线（.com 续费 $11.17/年，比 .app 便宜）。GitHub 仓库已改名 `tluo-github/quotlet`（旧地址自动跳转），OAuth App 回调已改。**保留不改**：Mac bundle id `app.quotabar`、钥匙串条目 “Quotabar Cloud”、公证配置名 `quotabar-notary`、D1 库名 `quotabar`、Cloudflare 账号子域名 `quotabar`。`quotabar://` 回调过渡期继续认
 
 ### 10.3 Mac 端界面上用户定下的细节
 
 - 登录入口在面板**右上角**：没登录是“登录”小按钮；登录后显示首字母头像 + 用户名 + 小箭头，点开是小卡片（头像、名字、邮箱、“在网页上查看”“退出登录”），**不要多余的说明文字**
 - 刷新按钮在**底栏**，紧跟“20:50 更新”后面；⌘R 不变
-- 登录在**默认浏览器新开标签页**完成（不用 ASWebAuthenticationSession 弹窗），登录后网页通过 `quotabar://auth?code=…&state=…` 回到 app，结果用系统通知提示
+- 登录在**默认浏览器新开标签页**完成（不用 ASWebAuthenticationSession 弹窗），登录后网页通过 `quotlet://auth?code=…&state=…` 回到 app，结果用系统通知提示
 - 设置页暂时没有云同步分组；以后的上报开关、hooks 开关再放进设置
 
 ### 10.4 已经上线的东西
 
 | 资源 | 值 |
 |---|---|
-| Worker | `app`，`https://app.quotabar.workers.dev`，代码在 `cloud/` |
+| Worker | `app`，`https://app.quotlet.com`，代码在 `cloud/` |
 | D1 | `quotabar`（亚太区），id 写在 `cloud/wrangler.jsonc`；`migrations/0001_init.sql` 已在线上执行 |
 | Durable Object | `UserHub` 已声明，还是空类 |
 | Cron | 每天 03:17 UTC，清理过期的登录 code |
 | Worker secrets | `GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`（已设好，值不在仓库里） |
-| GitHub OAuth App | 名字 Quotabar，回调 `https://app.quotabar.workers.dev/auth/github/callback` |
+| GitHub OAuth App | 名字 Quotlet，回调 `https://app.quotlet.com/auth/github/callback` |
+| 门户 Worker | `quotlet`，绑定 `quotlet.com` 和 `www.quotlet.com`（www 301 到主域名），代码在 `site/`，`scripts/deploy-site.sh deploy` 发布 |
 
 已经实现的接口：`/login`、`/auth/github/start`、`/auth/github/callback`、`POST /api/auth/exchange`、`GET /api/me`、`DELETE /api/me`、`POST /api/auth/logout`、`GET /api/devices`、`DELETE /api/devices/:id`、`GET /api/health`。
 
@@ -381,29 +383,30 @@ Worker 只依赖 Hono（路由）。JWT 签名和校验都用 WebCrypto 自己�
 
 网站（`cloud/web/static/`：`index.html` + `app.js` + `app.css`，原生 JS，不用构建）：概览（额度卡片、Mac 在线、最近会话按状态筛选）、会话列表（状态/设备筛选、加载更多）、会话详情（token 明细、状态时间线）、统计（7/30 天柱状图、按项目/模型）、设备（移除、退出登录）。hash 路由，页面开着时每分钟拉一次，切回前台立即拉。手机宽度下会话表格变成卡片。深色模式图表色用 `#D67352`（通过 dataviz 校验）。
 
-Mac 端：`Sources/Quotabar/Cloud.swift`（登录、退出、校验 token、请求封装、钥匙串；token 缓存在内存），`CloudSync.swift`（上报：记住每样东西上次发出去的签名，变了才发；失败下一轮重试；没变化时 2 分钟一次心跳；401 自动退出），`Store.swift` 在额度刷新和会话扫描后调用 `CloudSync`，`Views.swift` 里的 `AccountButton` 和设置页“云同步”分组（上报开关、上传会话标题，默认都开），`App.swift` 里的 `AppDelegate` 接收 `quotabar://`，`Info.plist` 注册了 `quotabar` scheme。
+Mac 端：`Sources/Quotlet/Cloud.swift`（登录、退出、校验 token、请求封装、钥匙串；token 缓存在内存），`CloudSync.swift`（上报：记住每样东西上次发出去的签名，变了才发；失败下一轮重试；没变化时 2 分钟一次心跳；401 自动退出），`Store.swift` 在额度刷新和会话扫描后调用 `CloudSync`，`Views.swift` 里的 `AccountButton` 和设置页“云同步”分组（上报开关、上传会话标题，默认都开），`App.swift` 里的 `AppDelegate` 接收 `quotlet://`，`Info.plist` 注册了 `quotlet` 和 `quotabar`（改名前的，过渡用）两个 scheme。
 
 ### 10.5 开发环境注意事项
 
 - 代码在 `cloud` 分支，还没合并到 main
 - `cloud/` 里的 wrangler 已经登录过 Cloudflare 账号；部署用 `cd cloud && npx wrangler deploy`，改了表结构用 `npx wrangler d1 migrations apply quotabar --remote`
 - 网络：终端里有 HTTP 代理环境变量。wrangler 偶尔报 `fetch failed`，重试一次一般就好。npm 官方源很慢，装包用 `--registry=https://registry.npmmirror.com`，装完把 `package-lock.json` 里的地址改回 `registry.npmjs.org`
-- Mac 开发版：`./build.sh` 打包到 `build/Quotabar.app`，用 `open build/Quotabar.app` 运行（先 `pkill -x Quotabar`），不要覆盖“应用程序”里的正式版
+- Mac 开发版：`./build.sh` 打包到 `build/Quotlet.app`，用 `open build/Quotlet.app` 运行（先 `pkill -x Quotlet`），不要覆盖“应用程序”里的正式版
 - 开发版是临时签名，每次重编译后第一次读钥匙串会弹授权框，点“始终允许”
-- 看 Mac 端联网日志：直接运行 `build/Quotabar.app/Contents/MacOS/Quotabar`，stderr 里有 `[cloud]` 开头的记录
-- 截图检查界面：`build/Quotabar.app/Contents/MacOS/Quotabar --snapshot <目录> -stage YES -demo YES -offline YES -scale 2`，加 `-cloudPreviewUser 名字` 可以看已登录的样子。截图模式不读钥匙串
-- **本地联调 Mac 上报**：`cd cloud && npx wrangler d1 migrations apply quotabar --local`，往本地 D1 插一个用户和一台 kind=mac 的设备（token_hash = base64url(sha256(token))），`npx wrangler dev --port 8787`，再运行 `build/Quotabar.app/Contents/MacOS/Quotabar -cloudBaseURL http://localhost:8787 -cloudDevToken <token>`。这两个参数只走启动参数，不写 UserDefaults、不碰钥匙串
+- 看 Mac 端联网日志：直接运行 `build/Quotlet.app/Contents/MacOS/Quotlet`，stderr 里有 `[cloud]` 开头的记录
+- 截图检查界面：`build/Quotlet.app/Contents/MacOS/Quotlet --snapshot <目录> -stage YES -demo YES -offline YES -scale 2`，加 `-cloudPreviewUser 名字` 可以看已登录的样子。截图模式不读钥匙串
+- **本地联调 Mac 上报**：`cd cloud && npx wrangler d1 migrations apply quotabar --local`，往本地 D1 插一个用户和一台 kind=mac 的设备（token_hash = base64url(sha256(token))），`npx wrangler dev --port 8787`，再运行 `build/Quotlet.app/Contents/MacOS/Quotlet -cloudBaseURL http://localhost:8787 -cloudDevToken <token>`。这两个参数只走启动参数，不写 UserDefaults、不碰钥匙串
 - 网站截图：无头 Chrome + CDP（`Network.setCookie` 设 `qb_session`），本次用的脚本没进仓库
-- `pkill -x Quotabar` 会把“应用程序”里的正式版也关掉，测完记得 `open -a /Applications/Quotabar.app`
+- `pkill -x Quotlet` 会把“应用程序”里的正式版也关掉，测完记得 `open -a /Applications/Quotlet.app`
 - **提交前检查敏感数据**：GitHub secret、Cloudflare 账号 id、个人邮箱都不能进仓库
 
 ### 10.6 下一步
 
-**先把里程碑 2 部署上线**（2026-11-18 本地测通，线上还没部署）：
+里程碑 2 已在 2026-11-18 部署上线（app.quotlet.com），开发版实测上报正常。
 
-1. `cd cloud && npx wrangler d1 migrations apply quotabar --remote`（0002 只加索引）
-2. `npx wrangler deploy`
-3. `./build.sh`，用开发版（已登录的钥匙串 token）跑几分钟，打开 https://app.quotabar.workers.dev 看数据
+**发 0.5.0（改名 + 云同步）之前要处理的**
+- 用 DMG 升级的老用户会同时有 `Quotabar.app` 和 `Quotlet.app`（同一个 bundle id）：新版启动时发现 `/Applications/Quotabar.app` 就提示移到废纸篓；开机启动项也要指向新 app
+- `cloud` 分支合并回 main，`build.sh release` 出 `Quotlet-0.5.0.dmg/zip`，更新 `Casks/quotlet.rb` 的版本、sha256、`app "Quotlet.app"`
+- 发版后重新跑 `scripts/deploy-site.sh deploy`，门户的下载按钮会自动指向新 DMG
 
 **里程碑 3：hooks + 实时**
 
@@ -414,5 +417,5 @@ Mac 端：`Sources/Quotabar/Cloud.swift`（登录、退出、校验 token、请�
 
 ## 11. 以后要在各家后台做的
 
-- Apple Developer：给 iOS App 建 App ID `app.quotabar.ios`，开通 Sign in with Apple 和 Push Notifications；建 Services ID `app.quotabar.web`（域名 `app.quotabar.workers.dev`，回调 `/auth/apple/callback`）；建 APNs Key（.p8）
+- Apple Developer：给 iOS App 建 App ID `app.quotlet.ios`，开通 Sign in with Apple 和 Push Notifications；建 Services ID `app.quotlet.web`（域名 `app.quotlet.com`，回调 `/auth/apple/callback`）；建 APNs Key（.p8）
 - Google Cloud：OAuth 同意屏幕 + Web 客户端 ID（回调 `/auth/google/callback`）

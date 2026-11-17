@@ -35,8 +35,8 @@ const githubIcon = raw(`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 
 
 /** search：/login 上的原始查询串（含 client/state/code_challenge），原样传给 /auth/github/start */
 export function loginPage(search: string) {
-  return layout('登录 Quotabar', html`
-<h1>登录 Quotabar</h1>
+  return layout('登录 Quotlet', html`
+<h1>登录 Quotlet</h1>
 <p>登录后，可以在网站和手机上查看 Claude 额度、会话和执行状态。</p>
 <a class="btn" href="/auth/github/start${search}">${githubIcon}使用 GitHub 登录</a>
 <p class="note">Apple 和 Google 登录稍后提供。</p>`)
@@ -51,7 +51,7 @@ export function errorPage(message: string) {
 
 /** Mac / iOS 登录成功后：跳回 App。链接放在 data 属性里由脚本读取，避免拼进脚本。 */
 export function returnToAppPage(appUrl: string, client: string) {
-  const app = client === 'mac' ? 'Quotabar' : 'Quotabar App'
+  const app = client === 'mac' ? 'Quotlet' : 'Quotlet App'
   return layout('正在返回 ' + app, html`
 <h1>登录成功</h1>
 <p>正在返回 ${app}。如果浏览器询问是否打开，请选择“打开”。</p>

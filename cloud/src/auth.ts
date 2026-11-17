@@ -99,7 +99,7 @@ auth.get('/auth/github/callback', async (c) => {
     headers: {
       Authorization: `Bearer ${tokenJson.access_token}`,
       Accept: 'application/vnd.github+json',
-      'User-Agent': 'quotabar-cloud',
+      'User-Agent': 'quotlet-cloud',
     },
   })
   const userRes = await gh('/user')
@@ -149,9 +149,9 @@ async function finishLogin(c: C, pending: PendingLogin, userId: string) {
   const code = randomToken()
   await c.env.DB.prepare('INSERT INTO auth_codes (code_hash, user_id, client, code_challenge, expires_at) VALUES (?, ?, ?, ?, ?)')
     .bind(await hashToken(code), userId, pending.client, pending.challenge!, now() + CODE_TTL).run()
-  const scheme = pending.client === 'mac' ? 'quotabar' : 'quotabar-ios'
+  const scheme = pending.client === 'mac' ? 'quotlet' : 'quotlet-ios'
   const appUrl = `${scheme}://auth?code=${encodeURIComponent(code)}&state=${encodeURIComponent(pending.clientState!)}`
-  // 显示一个“正在返回 App”的页面，由它跳到 quotabar://；浏览器问要不要打开时也有按钮可点
+  // 显示一个“正在返回 App”的页面，由它跳到 quotlet://；浏览器问要不要打开时也有按钮可点
   return c.html(returnToAppPage(appUrl, pending.client))
 }
 

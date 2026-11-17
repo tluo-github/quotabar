@@ -1,4 +1,4 @@
-// Quotabar 网站：概览、会话、会话详情、统计、设备。
+// Quotlet 网站：概览、会话、会话详情、统计、设备。
 // 不用框架：页面开着时每分钟拉一次接口，每 30 秒按缓存重画一次（相对时间会变）。
 'use strict'
 
@@ -218,7 +218,7 @@ function renderOverview(now) {
   out.push(devicesStrip(o, now))
 
   if (!o.usage.length && !o.sessions.length) {
-    out.push(el('div', { class: 'notice', text: '还没有 Mac 上报数据。在 Mac 上的 Quotabar 右上角登录，并在设置里打开“上报额度和会话”，额度和会话就会出现在这里。' }))
+    out.push(el('div', { class: 'notice', text: '还没有 Mac 上报数据。在 Mac 上的 Quotlet 右上角登录，并在设置里打开“上报额度和会话”，额度和会话就会出现在这里。' }))
   }
 
   // 会话：按状态筛选
