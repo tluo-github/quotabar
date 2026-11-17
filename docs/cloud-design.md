@@ -326,16 +326,77 @@ Worker 只依赖 Hono（路由）。JWT 签名和校验都用 WebCrypto 自己�
 
 ## 9. 里程碑
 
-1. **打通登录**：Worker 骨架 + D1 建表 + 网页 Apple/Google/GitHub 登录 + Mac 浏览器登录。先验证 workers.dev 域名在 Apple 和 Google 后台能不能登记
-2. **Mac 上报 + 网站**：额度、会话、每日 token 上报，网站概览页和会话页（带每分钟轮询），删除账号
-3. **hooks + 实时**：Mac 设置里的 hooks 开关（登录后才能开）、`--hook` 命令行分支、状态事件上报，UserHub 实时广播
-4. **iOS App**：登录、概览、会话详情、APNs 推送、灵动岛，提交 TestFlight
-5. **二期**：远程指令、在手机上点允许、安卓原生 App（看需要再定）
+| # | 内容 | 状态 |
+|---|---|---|
+| 1 | **打通登录**：Worker 骨架 + D1 建表 + GitHub 登录（网页 + Mac） | ✅ 2026-11-17 完成。Apple / Google 登录还没做 |
+| 2 | **Mac 上报 + 网站**：额度、会话、每日 token 上报，网站概览页和会话页（每分钟轮询） | ⏭ 下一步 |
+| 3 | **hooks + 实时**：Mac 设置里的 hooks 开关（登录后才能开）、`--hook` 命令行分支、状态事件上报，UserHub 实时广播 | |
+| 4 | **iOS App**：登录、概览、会话详情、APNs 推送、灵动岛，提交 TestFlight | |
+| 5 | **二期**：远程指令、在手机上点允许、Apple / Google 登录、安卓原生 App（看需要再定） | |
 
-## 10. 开工前需要你做的
+## 10. 交接说明（新会话从这里开始）
 
-- Cloudflare：注册账号，在 Workers 页面选好 `<sub>.workers.dev` 的子域名
-- 本机：装 `wrangler`（作为 `cloud/` 的开发依赖，用 npm 装，不全局安装）
-- Apple Developer：给 iOS App 建 App ID 并开通 Sign in with Apple 和 Push Notifications；建一个用于网页登录的 Services ID；建一个 APNs Key（.p8）
-- Google Cloud：建 OAuth 同意屏幕和一个 Web 客户端 ID
-- GitHub：在 Developer settings 里建一个 OAuth App
+### 10.1 需求原文（用户 2026-11-17 提出）
+
+1. 使用 Cloudflare 的免费服务（服务器、数据库）
+2. 开发在线网站、iOS App、Android App
+3. Quotabar 能登录注册
+4. Quotabar 上报数据和会话状态（执行中、执行完）
+5. 网站和 App 能查看详情、知道会话状态，通过服务器交互
+6. App 能下发指令，比如在外面让某个会话执行（二期）
+
+### 10.2 用户拍板过的决定（不要再问）
+
+- 先给自己用，以后开放给所有人，按多用户设计
+- 不买域名，地址是 `https://app.quotabar.workers.dev`（Cloudflare 账号子域名 `quotabar`，Worker 名 `app`）。workers.dev 不支持单层的 `quotabar.workers.dev`
+- 目标是全球用户；国内直连 workers.dev 不通，要走代理（Mac 端沿用 Quotabar 已有的代理设置）
+- 登录：Apple + Google + GitHub，**先只做 GitHub**；邮箱验证码要等有域名能发信时再说
+- iOS 用 SwiftUI 原生；Android 先用网站 PWA，页面开着时每分钟拉一次，不要求实时推送
+- hooks 开关**必须登录后才能开**（没登录时 hooks 没用处）
+- 远程指令要做（二期），默认关闭，必须登录后在那台 Mac 上手动开启
+
+### 10.3 Mac 端界面上用户定下的细节
+
+- 登录入口在面板**右上角**：没登录是“登录”小按钮；登录后显示首字母头像 + 用户名 + 小箭头，点开是小卡片（头像、名字、邮箱、“在网页上查看”“退出登录”），**不要多余的说明文字**
+- 刷新按钮在**底栏**，紧跟“20:50 更新”后面；⌘R 不变
+- 登录在**默认浏览器新开标签页**完成（不用 ASWebAuthenticationSession 弹窗），登录后网页通过 `quotabar://auth?code=…&state=…` 回到 app，结果用系统通知提示
+- 设置页暂时没有云同步分组；以后的上报开关、hooks 开关再放进设置
+
+### 10.4 已经上线的东西
+
+| 资源 | 值 |
+|---|---|
+| Worker | `app`，`https://app.quotabar.workers.dev`，代码在 `cloud/` |
+| D1 | `quotabar`（亚太区），id 写在 `cloud/wrangler.jsonc`；`migrations/0001_init.sql` 已在线上执行 |
+| Durable Object | `UserHub` 已声明，还是空类 |
+| Cron | 每天 03:17 UTC，清理过期的登录 code |
+| Worker secrets | `GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`（已设好，值不在仓库里） |
+| GitHub OAuth App | 名字 Quotabar，回调 `https://app.quotabar.workers.dev/auth/github/callback` |
+
+已经实现的接口：`/login`、`/auth/github/start`、`/auth/github/callback`、`POST /api/auth/exchange`、`GET /api/me`、`DELETE /api/me`、`POST /api/auth/logout`、`GET /api/devices`、`DELETE /api/devices/:id`、`GET /api/health`。网站首页 `cloud/web/static/index.html` 是临时页面：显示账号和已登录设备。
+
+Mac 端：`Sources/Quotabar/Cloud.swift`（登录、退出、校验 token、请求封装、钥匙串），`Views.swift` 里的 `AccountButton`，`App.swift` 里的 `AppDelegate` 接收 `quotabar://`，`Info.plist` 注册了 `quotabar` scheme。
+
+### 10.5 开发环境注意事项
+
+- 代码在 `cloud` 分支，还没合并到 main
+- `cloud/` 里的 wrangler 已经登录过 Cloudflare 账号；部署用 `cd cloud && npx wrangler deploy`，改了表结构用 `npx wrangler d1 migrations apply quotabar --remote`
+- 网络：终端里有 HTTP 代理环境变量。wrangler 偶尔报 `fetch failed`，重试一次一般就好。npm 官方源很慢，装包用 `--registry=https://registry.npmmirror.com`，装完把 `package-lock.json` 里的地址改回 `registry.npmjs.org`
+- Mac 开发版：`./build.sh` 打包到 `build/Quotabar.app`，用 `open build/Quotabar.app` 运行（先 `pkill -x Quotabar`），不要覆盖“应用程序”里的正式版
+- 开发版是临时签名，每次重编译后第一次读钥匙串会弹授权框，点“始终允许”
+- 看 Mac 端联网日志：直接运行 `build/Quotabar.app/Contents/MacOS/Quotabar`，stderr 里有 `[cloud]` 开头的记录
+- 截图检查界面：`build/Quotabar.app/Contents/MacOS/Quotabar --snapshot <目录> -stage YES -demo YES -offline YES -scale 2`，加 `-cloudPreviewUser 名字` 可以看已登录的样子。截图模式不读钥匙串
+- **提交前检查敏感数据**：GitHub secret、Cloudflare 账号 id、个人邮箱都不能进仓库
+
+### 10.6 下一步：里程碑 2 要做的
+
+1. Worker 实现第 5 节“Mac 上报”的接口：`heartbeat`、`usage`、`sessions`、`events`（先建好，第 3 步才用）、`daily`
+2. Worker 实现读取接口：`/api/overview?since=`、`/api/sessions`、`/api/sessions/:id`、`/api/stats`
+3. Mac 端登录后：额度刷新成功就上报（有变化才发）；会话扫描后把有变化的会话批量上报；每日 token 有变化才发；没变化时每 2 分钟心跳一次。会话标题按第 4 节存，项目只传目录名
+4. 网站：把临时首页换成设计稿里的仪表盘（额度、设备在线、会话列表、按状态筛选），页面开着时每分钟拉 `/api/overview`
+5. 在设置页加“云同步”分组：上报开关、“上传会话标题”开关（第 0 节、设计稿里的 Mac 设置页）
+
+## 11. 以后要在各家后台做的
+
+- Apple Developer：给 iOS App 建 App ID `app.quotabar.ios`，开通 Sign in with Apple 和 Push Notifications；建 Services ID `app.quotabar.web`（域名 `app.quotabar.workers.dev`，回调 `/auth/apple/callback`）；建 APNs Key（.p8）
+- Google Cloud：OAuth 同意屏幕 + Web 客户端 ID（回调 `/auth/google/callback`）
