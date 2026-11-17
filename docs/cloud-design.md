@@ -265,18 +265,20 @@ CREATE TABLE commands (
 | PUT | `/api/ingest/usage` | `{plan, limits[], fetched_at}`，额度变了才发 |
 | POST | `/api/ingest/sessions` | `{sessions:[…]}`，只发有变化的，单次最多 100 条 |
 | POST | `/api/ingest/events` | `{events:[{session_id, ts, status, detail}]}`，状态一变就发 |
-| PUT | `/api/ingest/daily` | 最近 31 天的每日 token，变了才发 |
+| PUT | `/api/ingest/daily` | `{full?, rows[]}`：app 启动 / 登录后第一次发 `full: true` 全量（服务端先清掉这台 Mac 的旧行），之后只发变了的行 |
 
-Worker 写完 D1 以后：调用这个用户的 UserHub 广播给在线的网站和 App；遇到下面的事件就发 APNs 推送。
+免费套餐每次请求最多 50 条 D1 查询，所以批量写入都是一条语句 + `json_each(?)`，不按行拆。会话状态以 Mac 上报的为准（没开 hooks 时 Mac 按日志估算：3 分钟内有新回复算“执行中”，否则“已完成”）；只有状态变化时才记一条 `session_events`。
+
+Worker 写完 D1 以后（里程碑 3 起）：调用这个用户的 UserHub 广播给在线的网站和 App；遇到下面的事件就发 APNs 推送。
 
 ### 读取
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/overview?since=<ts>` | 额度 + 设备 + 进行中和最近完成的会话。带 `since` 只返回之后的变化，PWA 每分钟拉一次用的就是它 |
+| GET | `/api/overview` | 每台 Mac 的额度 + Mac 在线状态 + 最近 30 个会话。PWA 每分钟拉一次。原计划的 `since` 增量没做：整包只有十几 KB，免费额度算的是请求数不是流量 |
 | GET | `/api/sessions?status=&device=&days=&cursor=` | 会话列表 |
 | GET | `/api/sessions/:id` | 会话详情 + 状态时间线 |
-| GET | `/api/stats?days=30` | 每日、按项目、按模型的 token |
+| GET | `/api/stats?from=YYYY-MM-DD` | 每日、按项目、按模型的 token（所有 Mac 加起来）。`from` 由浏览器按本地时区算；没传就用 `?days=30` 按 UTC 推 |
 | GET | `/api/ws` | WebSocket，转给 UserHub；消息格式 `{type:'session'\|'usage'\|'device', data}` |
 
 ### 二期
@@ -329,7 +331,7 @@ Worker 只依赖 Hono（路由）。JWT 签名和校验都用 WebCrypto 自己�
 | # | 内容 | 状态 |
 |---|---|---|
 | 1 | **打通登录**：Worker 骨架 + D1 建表 + GitHub 登录（网页 + Mac） | ✅ 2026-11-17 完成。Apple / Google 登录还没做 |
-| 2 | **Mac 上报 + 网站**：额度、会话、每日 token 上报，网站概览页和会话页（每分钟轮询） | ⏭ 下一步 |
+| 2 | **Mac 上报 + 网站**：额度、会话、每日 token 上报，网站概览页和会话页（每分钟轮询） | ✅ 2026-11-18 代码完成、本地测通；线上部署见 10.6 |
 | 3 | **hooks + 实时**：Mac 设置里的 hooks 开关（登录后才能开）、`--hook` 命令行分支、状态事件上报，UserHub 实时广播 | |
 | 4 | **iOS App**：登录、概览、会话详情、APNs 推送、灵动岛，提交 TestFlight | |
 | 5 | **二期**：远程指令、在手机上点允许、Apple / Google 登录、安卓原生 App（看需要再定） | |
@@ -373,9 +375,13 @@ Worker 只依赖 Hono（路由）。JWT 签名和校验都用 WebCrypto 自己�
 | Worker secrets | `GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`（已设好，值不在仓库里） |
 | GitHub OAuth App | 名字 Quotabar，回调 `https://app.quotabar.workers.dev/auth/github/callback` |
 
-已经实现的接口：`/login`、`/auth/github/start`、`/auth/github/callback`、`POST /api/auth/exchange`、`GET /api/me`、`DELETE /api/me`、`POST /api/auth/logout`、`GET /api/devices`、`DELETE /api/devices/:id`、`GET /api/health`。网站首页 `cloud/web/static/index.html` 是临时页面：显示账号和已登录设备。
+已经实现的接口：`/login`、`/auth/github/start`、`/auth/github/callback`、`POST /api/auth/exchange`、`GET /api/me`、`DELETE /api/me`、`POST /api/auth/logout`、`GET /api/devices`、`DELETE /api/devices/:id`、`GET /api/health`。
 
-Mac 端：`Sources/Quotabar/Cloud.swift`（登录、退出、校验 token、请求封装、钥匙串），`Views.swift` 里的 `AccountButton`，`App.swift` 里的 `AppDelegate` 接收 `quotabar://`，`Info.plist` 注册了 `quotabar` scheme。
+里程碑 2 新增（代码在 `cloud/src/ingest.ts`、`cloud/src/read.ts`）：`/api/ingest/heartbeat|usage|sessions|events|daily`、`GET /api/overview`、`GET /api/sessions`、`GET /api/sessions/:id`、`GET /api/stats`；迁移 `0002_m2.sql`（只加索引）；Cron 增加清理：状态时间线 30 天、额度趋势 90 天、会话 90 天、每日 token 100 天。
+
+网站（`cloud/web/static/`：`index.html` + `app.js` + `app.css`，原生 JS，不用构建）：概览（额度卡片、Mac 在线、最近会话按状态筛选）、会话列表（状态/设备筛选、加载更多）、会话详情（token 明细、状态时间线）、统计（7/30 天柱状图、按项目/模型）、设备（移除、退出登录）。hash 路由，页面开着时每分钟拉一次，切回前台立即拉。手机宽度下会话表格变成卡片。深色模式图表色用 `#D67352`（通过 dataviz 校验）。
+
+Mac 端：`Sources/Quotabar/Cloud.swift`（登录、退出、校验 token、请求封装、钥匙串；token 缓存在内存），`CloudSync.swift`（上报：记住每样东西上次发出去的签名，变了才发；失败下一轮重试；没变化时 2 分钟一次心跳；401 自动退出），`Store.swift` 在额度刷新和会话扫描后调用 `CloudSync`，`Views.swift` 里的 `AccountButton` 和设置页“云同步”分组（上报开关、上传会话标题，默认都开），`App.swift` 里的 `AppDelegate` 接收 `quotabar://`，`Info.plist` 注册了 `quotabar` scheme。
 
 ### 10.5 开发环境注意事项
 
@@ -386,15 +392,25 @@ Mac 端：`Sources/Quotabar/Cloud.swift`（登录、退出、校验 token、请�
 - 开发版是临时签名，每次重编译后第一次读钥匙串会弹授权框，点“始终允许”
 - 看 Mac 端联网日志：直接运行 `build/Quotabar.app/Contents/MacOS/Quotabar`，stderr 里有 `[cloud]` 开头的记录
 - 截图检查界面：`build/Quotabar.app/Contents/MacOS/Quotabar --snapshot <目录> -stage YES -demo YES -offline YES -scale 2`，加 `-cloudPreviewUser 名字` 可以看已登录的样子。截图模式不读钥匙串
+- **本地联调 Mac 上报**：`cd cloud && npx wrangler d1 migrations apply quotabar --local`，往本地 D1 插一个用户和一台 kind=mac 的设备（token_hash = base64url(sha256(token))），`npx wrangler dev --port 8787`，再运行 `build/Quotabar.app/Contents/MacOS/Quotabar -cloudBaseURL http://localhost:8787 -cloudDevToken <token>`。这两个参数只走启动参数，不写 UserDefaults、不碰钥匙串
+- 网站截图：无头 Chrome + CDP（`Network.setCookie` 设 `qb_session`），本次用的脚本没进仓库
+- `pkill -x Quotabar` 会把“应用程序”里的正式版也关掉，测完记得 `open -a /Applications/Quotabar.app`
 - **提交前检查敏感数据**：GitHub secret、Cloudflare 账号 id、个人邮箱都不能进仓库
 
-### 10.6 下一步：里程碑 2 要做的
+### 10.6 下一步
 
-1. Worker 实现第 5 节“Mac 上报”的接口：`heartbeat`、`usage`、`sessions`、`events`（先建好，第 3 步才用）、`daily`
-2. Worker 实现读取接口：`/api/overview?since=`、`/api/sessions`、`/api/sessions/:id`、`/api/stats`
-3. Mac 端登录后：额度刷新成功就上报（有变化才发）；会话扫描后把有变化的会话批量上报；每日 token 有变化才发；没变化时每 2 分钟心跳一次。会话标题按第 4 节存，项目只传目录名
-4. 网站：把临时首页换成设计稿里的仪表盘（额度、设备在线、会话列表、按状态筛选），页面开着时每分钟拉 `/api/overview`
-5. 在设置页加“云同步”分组：上报开关、“上传会话标题”开关（第 0 节、设计稿里的 Mac 设置页）
+**先把里程碑 2 部署上线**（2026-11-18 本地测通，线上还没部署）：
+
+1. `cd cloud && npx wrangler d1 migrations apply quotabar --remote`（0002 只加索引）
+2. `npx wrangler deploy`
+3. `./build.sh`，用开发版（已登录的钥匙串 token）跑几分钟，打开 https://app.quotabar.workers.dev 看数据
+
+**里程碑 3：hooks + 实时**
+
+1. `--hook` 命令行分支（第 2 节）：`App.swift` 启动前判断参数，写 `events.jsonl`
+2. `HookInstaller`：装 / 卸 / 修复，设置页“云同步”分组里加“精确的会话状态”开关（登录后才能开）
+3. `CloudSync` 监听 `events.jsonl`：hooks 给出的状态覆盖按日志估算的状态（`sessionPayload` 里合并），状态一变就调 `/api/ingest/events`（接口已经有了）
+4. UserHub：ingest 写完 D1 后广播；网站连 `/api/ws`，连不上退回每分钟轮询
 
 ## 11. 以后要在各家后台做的
 

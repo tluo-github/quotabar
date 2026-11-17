@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import { DurableObject } from 'cloudflare:workers'
 import { auth, clearSession, requireAuth, type AppVars } from './auth'
 import { now } from './util'
+import { ingest } from './ingest'
+import { read } from './read'
 
 export interface Env {
   DB: D1Database
@@ -23,6 +25,11 @@ app.use('/api/me/*', requireAuth)
 app.use('/api/devices', requireAuth)
 app.use('/api/devices/*', requireAuth)
 app.use('/api/auth/logout', requireAuth)
+app.use('/api/ingest/*', requireAuth)
+for (const p of ['/api/overview', '/api/sessions', '/api/sessions/*', '/api/stats']) app.use(p, requireAuth)
+
+app.route('/api/ingest', ingest)
+app.route('/api', read)
 
 app.get('/api/me', (c) => {
   const d = c.get('device')
@@ -75,7 +82,16 @@ export class UserHub extends DurableObject<Env> {}
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledController, env: Env) {
-    // 清理过期的登录 code
-    await env.DB.prepare('DELETE FROM auth_codes WHERE expires_at < ?').bind(now()).run()
+    const t = now()
+    const day = 86400_000
+    await env.DB.batch([
+      // 过期的登录 code
+      env.DB.prepare('DELETE FROM auth_codes WHERE expires_at < ?').bind(t),
+      // 状态时间线保留 30 天，额度趋势 90 天，会话 90 天，每日 token 100 天（Mac 只上报最近 31 天）
+      env.DB.prepare('DELETE FROM session_events WHERE ts < ?').bind(t - 30 * day),
+      env.DB.prepare('DELETE FROM usage_history WHERE ts < ?').bind(t - 90 * day),
+      env.DB.prepare('DELETE FROM sessions WHERE last_activity_at < ?').bind(t - 90 * day),
+      env.DB.prepare('DELETE FROM daily_tokens WHERE day < ?').bind(new Date(t - 100 * day).toISOString().slice(0, 10)),
+    ])
   },
 } satisfies ExportedHandler<Env>
