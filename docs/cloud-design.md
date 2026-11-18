@@ -401,12 +401,18 @@ Mac 端：`Sources/Quotlet/Cloud.swift`（登录、退出、校验 token、请�
 
 ### 10.6 下一步
 
-里程碑 2 已在 2026-11-18 部署上线（app.quotlet.com），开发版实测上报正常。
+**0.5.0（2026-11-18 发布）做了什么**
+- 改名 Quotlet；启动时发现 `/Applications/Quotabar.app` 会先退出旧版、问要不要移到废纸篓，开机启动重新登记（`LegacyApp.swift`）
+- 界面改成三层（设计稿 https://claude.ai/artifact/RKtmYvfpht48cNTsWdZzMS）：状态栏不变；面板只看配额（Claude + Codex 各一组 + 告急时的建议条）和「今天」（输出、输入、请求、平均 / 峰值速度、API 等值费用）；「历史」打开独立的用量历史窗口（`History.swift`）
+- 读 Codex 本机日志（`Codex.swift`）：额度、套餐、每次回复的 token 和耗时；排除 Codex 桌面版从 Claude Code 导入的会话（`~/.codex/external_agent_session_imports.json`）
+- 速度 = 输出 token ÷ 回复耗时（输出 < 20 token 的回复不计）；费用按官方 API 价格（`Pricing.swift`），Codex 模型价格未知不算
+- 每日汇总和额度读数存在 `~/Library/Application Support/Quotlet/`（`HistoryStore.swift`），Claude Code 清理 30 天前日志后历史还在
+- 云同步仍只上报 Claude 的会话和 token（`snap.only(.claude)`），网站还不区分来源
+- 演示视频脚本删了，换成 `scripts/make-screenshots.sh`（静态截图，历史窗口用真实窗口截屏）
 
-**发 0.5.0（改名 + 云同步）之前要处理的**
-- 用 DMG 升级的老用户会同时有 `Quotabar.app` 和 `Quotlet.app`（同一个 bundle id）：新版启动时发现 `/Applications/Quotabar.app` 就提示移到废纸篓；开机启动项也要指向新 app
-- `cloud` 分支合并回 main，`build.sh release` 出 `Quotlet-0.5.0.dmg/zip`，更新 `Casks/quotlet.rb` 的版本、sha256、`app "Quotlet.app"`
-- 发版后重新跑 `scripts/deploy-site.sh deploy`，门户的下载按钮会自动指向新 DMG
+**之后可以做的**
+- 网站仪表盘也显示 Codex 额度和来源（上报加 source 字段）
+- Codex 模型价格公开后补进 `Pricing.swift`
 
 **里程碑 3：hooks + 实时**
 
