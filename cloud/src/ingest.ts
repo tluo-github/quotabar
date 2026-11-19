@@ -79,20 +79,21 @@ ingest.put('/usage', async (c) => {
     severity: str(l.severity, 20),
   }))
   const device = c.get('device')
+  const provider = b.provider === 'codex' ? 'codex' : 'claude'
   const fetchedAt = ts(b.fetched_at, now())
   const fiveHour = limits.find((l) => l.kind === 'session')?.percent ?? null
   const weekly = limits.find((l) => l.kind === 'weekly_all')?.percent ?? null
   const db = c.env.DB
   await db.batch([
     db.prepare(
-      `INSERT INTO usage_latest (device_id, user_id, plan, limits, fetched_at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(device_id) DO UPDATE SET plan = excluded.plan, limits = excluded.limits, fetched_at = excluded.fetched_at`,
-    ).bind(device.id, device.user_id, str(b.plan, 20), JSON.stringify(limits), fetchedAt),
+      `INSERT INTO usage_latest (device_id, provider, user_id, plan, limits, fetched_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(device_id, provider) DO UPDATE SET plan = excluded.plan, limits = excluded.limits, fetched_at = excluded.fetched_at`,
+    ).bind(device.id, provider, device.user_id, str(b.plan, 20), JSON.stringify(limits), fetchedAt),
     // 趋势图用：同一台设备最多每 15 分钟存一条
     db.prepare(
-      `INSERT INTO usage_history (device_id, ts, five_hour, weekly)
-       SELECT ?1, ?2, ?3, ?4 WHERE NOT EXISTS (SELECT 1 FROM usage_history WHERE device_id = ?1 AND ts > ?5)`,
-    ).bind(device.id, fetchedAt, fiveHour, weekly, fetchedAt - HISTORY_GAP),
+      `INSERT INTO usage_history (device_id, provider, ts, five_hour, weekly)
+       SELECT ?1, ?2, ?3, ?4, ?5 WHERE NOT EXISTS (SELECT 1 FROM usage_history WHERE device_id = ?1 AND provider = ?2 AND ts > ?6)`,
+    ).bind(device.id, provider, fetchedAt, fiveHour, weekly, fetchedAt - HISTORY_GAP),
   ])
   return c.json({ ok: true })
 })
@@ -116,6 +117,7 @@ ingest.post('/sessions', async (c) => {
     const last = ts(s.last_activity_at, t)
     return [{
       id,
+      source: s.source === 'codex' ? 'codex' : 'claude',
       project: str(s.project, 120) ?? '?',
       title: str(s.title, 200),
       model: str(s.model, 80),
@@ -148,16 +150,16 @@ ingest.post('/sessions', async (c) => {
 
   const stmts = [
     db.prepare(
-      `INSERT INTO sessions (user_id, id, device_id, project, title, model, status, status_detail, status_at,
+      `INSERT INTO sessions (user_id, id, device_id, source, project, title, model, status, status_detail, status_at,
                              started_at, last_activity_at, tokens_in, tokens_out, tokens_cache_read, tokens_cache_write, requests)
-       SELECT ?1, j.value->>'id', ?2, j.value->>'project', j.value->>'title', j.value->>'model',
+       SELECT ?1, j.value->>'id', ?2, j.value->>'source', j.value->>'project', j.value->>'title', j.value->>'model',
               j.value->>'status', j.value->>'status_detail', j.value->>'status_at',
               j.value->>'started_at', j.value->>'last_activity_at',
               j.value->>'tokens_in', j.value->>'tokens_out', j.value->>'tokens_cache_read', j.value->>'tokens_cache_write',
               j.value->>'requests'
          FROM json_each(?3) j WHERE true
        ON CONFLICT(user_id, id) DO UPDATE SET
-         device_id = excluded.device_id, project = excluded.project, title = excluded.title, model = excluded.model,
+         source = excluded.source, device_id = excluded.device_id, project = excluded.project, title = excluded.title, model = excluded.model,
          status_at = CASE WHEN sessions.status = excluded.status THEN sessions.status_at ELSE excluded.status_at END,
          status = excluded.status, status_detail = excluded.status_detail,
          started_at = excluded.started_at, last_activity_at = excluded.last_activity_at,
@@ -224,6 +226,7 @@ ingest.put('/daily', async (c) => {
     if (typeof r.day !== 'string' || !DAY.test(r.day)) return []
     return [{
       day: r.day,
+      source: r.source === 'codex' ? 'codex' : 'claude',
       project: str(r.project, 120) ?? '?',
       model: str(r.model, 80) ?? '?',
       tokens_in: int(r.tokens_in),
@@ -239,13 +242,13 @@ ingest.put('/daily', async (c) => {
   if (b.full === true) stmts.push(db.prepare('DELETE FROM daily_tokens WHERE device_id = ?').bind(device.id))
   if (rows.length) {
     stmts.push(db.prepare(
-      `INSERT INTO daily_tokens (device_id, user_id, day, project, model,
+      `INSERT INTO daily_tokens (device_id, user_id, day, project, model, source,
                                  tokens_in, tokens_out, tokens_cache_read, tokens_cache_write, requests)
-       SELECT ?1, ?2, j.value->>'day', j.value->>'project', j.value->>'model',
+       SELECT ?1, ?2, j.value->>'day', j.value->>'project', j.value->>'model', j.value->>'source',
               j.value->>'tokens_in', j.value->>'tokens_out', j.value->>'tokens_cache_read', j.value->>'tokens_cache_write',
               j.value->>'requests'
          FROM json_each(?3) j WHERE true
-       ON CONFLICT(device_id, day, project, model) DO UPDATE SET
+       ON CONFLICT(device_id, day, project, model) DO UPDATE SET source = excluded.source,
          tokens_in = excluded.tokens_in, tokens_out = excluded.tokens_out,
          tokens_cache_read = excluded.tokens_cache_read, tokens_cache_write = excluded.tokens_cache_write,
          requests = excluded.requests`,

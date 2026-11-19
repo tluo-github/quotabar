@@ -7,7 +7,7 @@
 | 事项 | 决定 |
 |---|---|
 | 用户范围 | 先给自己用，以后开放给所有人，所以从一开始就按多用户设计 |
-| 域名 | 2026-11-18 买了 `quotlet.com`（Cloudflare 注册）。门户 `quotlet.com`，网站和 API 在 `app.quotlet.com`（同一个 Worker `app`）；旧地址 `app.quotabar.workers.dev` 还能用 |
+| 域名 | 门户 `quotlet.com`，仪表盘和 API 只用 `app.quotlet.com`（Worker `app`）。`app.quotabar.workers.dev` 和该 Worker 的预览入口已关闭 |
 | Mac 端 | 联网功能默认关闭；登录后上报额度、会话和状态 |
 | 会话状态 | 设置里加一个开关“精确的会话状态”，打开后往 Claude Code 里装 hooks。**必须先登录才能打开**；退出登录时自动卸载 hooks |
 | 远程指令 | 要做（二期）。默认关闭，必须登录后在那台 Mac 上手动开启 |
@@ -356,7 +356,7 @@ Worker 只依赖 Hono（路由）。JWT 签名和校验都用 WebCrypto 自己�
 - iOS 用 SwiftUI 原生；Android 先用网站 PWA，页面开着时每分钟拉一次，不要求实时推送
 - hooks 开关**必须登录后才能开**（没登录时 hooks 没用处）
 - 远程指令要做（二期），默认关闭，必须登录后在那台 Mac 上手动开启
-- **改名为 Quotlet**（2026-11-18）：quotabar.app 是另一个同名同类的开源工具 QuotaBar。新名 = quota + -let（小），取“低调、小巧”。门户 `quotlet.com`、仪表盘 `app.quotlet.com` 已上线（.com 续费 $11.17/年，比 .app 便宜）。GitHub 仓库已改名 `tluo-github/quotlet`（旧地址自动跳转），OAuth App 回调已改。**保留不改**：Mac bundle id `app.quotabar`、钥匙串条目 “Quotabar Cloud”、公证配置名 `quotabar-notary`、D1 库名 `quotabar`、Cloudflare 账号子域名 `quotabar`。`quotabar://` 回调过渡期继续认
+- **改名为 Quotlet**（2026-11-18）：quotabar.app 是另一个同名同类的开源工具 QuotaBar。新名 = quota + -let（小），取“低调、小巧”。门户 `quotlet.com`、仪表盘 `app.quotlet.com` 已上线（.com 续费 $11.17/年，比 .app 便宜）。GitHub 仓库已改名 `tluo-github/quotlet`（旧地址自动跳转）。**保留不改**：Mac bundle id `app.quotabar`、钥匙串条目 “Quotabar Cloud”、公证配置名 `quotabar-notary`、D1 库名 `quotabar`、Cloudflare 账号子域名 `quotabar`。`quotabar://` 回调过渡期继续认
 
 ### 10.3 Mac 端界面上用户定下的细节
 
@@ -374,7 +374,7 @@ Worker 只依赖 Hono（路由）。JWT 签名和校验都用 WebCrypto 自己�
 | Durable Object | `UserHub` 已声明，还是空类 |
 | Cron | 每天 03:17 UTC，清理过期的登录 code |
 | Worker secrets | `GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`（已设好，值不在仓库里） |
-| GitHub OAuth App | 名字 Quotlet，回调 `https://app.quotlet.com/auth/github/callback` |
+| GitHub OAuth App | 名字 Quotlet；后台 Redirect URI 应为 `https://app.quotlet.com/auth/github/callback`，不要启用通配匹配 |
 | 门户 Worker | `quotlet`，绑定 `quotlet.com` 和 `www.quotlet.com`（www 301 到主域名），代码在 `site/`，`scripts/deploy-site.sh deploy` 发布 |
 
 已经实现的接口：`/login`、`/auth/github/start`、`/auth/github/callback`、`POST /api/auth/exchange`、`GET /api/me`、`DELETE /api/me`、`POST /api/auth/logout`、`GET /api/devices`、`DELETE /api/devices/:id`、`GET /api/health`。
@@ -391,7 +391,7 @@ Mac 端：`Sources/Quotlet/Cloud.swift`（登录、退出、校验 token、请�
 - `cloud/` 里的 wrangler 已经登录过 Cloudflare 账号；部署用 `cd cloud && npx wrangler deploy`，改了表结构用 `npx wrangler d1 migrations apply quotabar --remote`
 - 网络：终端里有 HTTP 代理环境变量。wrangler 偶尔报 `fetch failed`，重试一次一般就好。npm 官方源很慢，装包用 `--registry=https://registry.npmmirror.com`，装完把 `package-lock.json` 里的地址改回 `registry.npmjs.org`
 - Mac 开发版：`./build.sh` 打包到 `build/Quotlet.app`，用 `open build/Quotlet.app` 运行（先 `pkill -x Quotlet`），不要覆盖“应用程序”里的正式版
-- 开发版是临时签名，每次重编译后第一次读钥匙串会弹授权框，点“始终允许”
+- 开发版临时签名重编译后可能需要重新授权钥匙串。启动和普通刷新使用 `LAContext.interactionNotAllowed` 与 `SecKeychainSetUserInteractionAllowed(false)` 禁止交互，包括旧式 ACL 密码弹窗。所有钥匙串操作串行执行并恢复进程原有交互状态。Claude 额度仅在点击设置里的「允许钥匙串访问」时允许系统请求授权。云登录按钮直接打开浏览器。云 token 保存到新的钥匙串账号条目后，将账号标识记录在 `cloudTokenAccount`，再静默清理旧条目。云 token 的读取、保存、删除均禁止交互。
 - 看 Mac 端联网日志：直接运行 `build/Quotlet.app/Contents/MacOS/Quotlet`，stderr 里有 `[cloud]` 开头的记录
 - 截图检查界面：`build/Quotlet.app/Contents/MacOS/Quotlet --snapshot <目录> -stage YES -demo YES -offline YES -scale 2`，加 `-cloudPreviewUser 名字` 可以看已登录的样子。截图模式不读钥匙串
 - **本地联调 Mac 上报**：`cd cloud && npx wrangler d1 migrations apply quotabar --local`，往本地 D1 插一个用户和一台 kind=mac 的设备（token_hash = base64url(sha256(token))），`npx wrangler dev --port 8787`，再运行 `build/Quotlet.app/Contents/MacOS/Quotlet -cloudBaseURL http://localhost:8787 -cloudDevToken <token>`。这两个参数只走启动参数，不写 UserDefaults、不碰钥匙串
@@ -401,18 +401,34 @@ Mac 端：`Sources/Quotlet/Cloud.swift`（登录、退出、校验 token、请�
 
 ### 10.6 下一步
 
+**GitHub 登录验收**：线上 `/auth/github/start` 已确认发送 `https://app.quotlet.com/auth/github/callback`。如果 GitHub 提示 `redirect_uri` 不匹配，检查 OAuth App 后台是否误填成 `https://app.quotlet.comauth/github/callback`（`.com` 之后少了 `/`）。保存正确地址后，从网页和 Mac 端分别重新发起登录，确认网页进入仪表盘、Mac 回跳后面板显示账号，再继续里程碑 3。
+
 **0.5.0（2026-11-18 发布）做了什么**
 - 改名 Quotlet；启动时发现 `/Applications/Quotabar.app` 会先退出旧版、问要不要移到废纸篓，开机启动重新登记（`LegacyApp.swift`）
 - 界面改成三层（设计稿 https://claude.ai/artifact/RKtmYvfpht48cNTsWdZzMS）：状态栏不变；面板只看配额（Claude + Codex 各一组 + 告急时的建议条）和「今天」（输出、输入、请求、平均 / 峰值速度、API 等值费用）；「历史」打开独立的用量历史窗口（`History.swift`）
 - 读 Codex 本机日志（`Codex.swift`）：额度、套餐、每次回复的 token 和耗时；排除 Codex 桌面版从 Claude Code 导入的会话（`~/.codex/external_agent_session_imports.json`）
 - 速度 = 输出 token ÷ 回复耗时（输出 < 20 token 的回复不计）；费用按官方 API 价格（`Pricing.swift`），Codex 模型价格未知不算
 - 每日汇总和额度读数存在 `~/Library/Application Support/Quotlet/`（`HistoryStore.swift`），Claude Code 清理 30 天前日志后历史还在
-- 云同步仍只上报 Claude 的会话和 token（`snap.only(.claude)`），网站还不区分来源
+- 云同步已支持 Claude + Codex 的额度、会话和每日 token，详见下方「双来源工作台更新」
 - 演示视频脚本删了，换成 `scripts/make-screenshots.sh`（静态截图，历史窗口用真实窗口截屏）
 
 **之后可以做的**
-- 网站仪表盘也显示 Codex 额度和来源（上报加 source 字段）
 - Codex 模型价格公开后补进 `Pricing.swift`
+
+**双来源工作台更新（2026-11-18）**
+
+- 默认本地统计，`claudeUsageAPIEnabled` 缺省为 false。关闭时取消接口任务并隐藏旧额度，Claude 状态栏显示今日本机 token。开启后使用静默读取检测权限，需要授权时在设置内显示「允许钥匙串访问」。Codex 额度继续取本机日志。0.6 起通知缺省开启（90%、100%、重置恢复），需要系统权限。云会话仅在已有账号信息时尝试无交互恢复，需授权时等待用户点击登录。
+- 本地日志通过 `SessionLogWatcher` 监听 FSEvents，覆盖 Claude projects、Codex sessions / archived_sessions 和标题索引。事件合并后触发缓存扫描，扫描中的新请求在结束后补扫，每分钟保留兜底扫描。Claude 的 5 小时和每周额度继续通过钥匙串凭证查询接口。授权上下文带查询用途说明，具体密码或生物识别界面由条目的系统保护设置决定。
+- `ClaudeQuotaEstimator` 对 5 小时和周额度分别累计同窗口的接口百分点变化与本机 Claude token 增量，得到经验比例。接口百分比取整不变时保留校准起点；没有本机 token 的增长段跳过。显示值为最新接口基线加上接口时间之后的新 token 估算，带 `≈` 和一位小数，每次接口返回时重置显示基线。窗口重置、百分比回退、套餐变化或关闭接口会清除对应校准。服务端时间与日志写入时间存在误差，混合其他设备用量和模型变化也会影响比例。本机估算参与通知，原始 `Store.usage` 驱动云端上报和额度历史。
+- Mac 用量页移除额度详情与消耗预测，恢复今日输出、输入（含缓存）、请求、速度、峰值和 API 等值费用，标签与数值同行显示；面板固定高度 680pt（受屏幕可用高度限制）。状态栏来源可在面板顶部（用量、会话、统计共用）与设置页切换，并保存到 UserDefaults。
+- 历史窗口的项目趋势默认全选，支持独立勾选，使用折线图，悬停显示各个已选项目在该时刻的数值。会话表缩窄标题列，移除设备列，恢复相对最大会话的用量进度条，宽度沿用原设备列；保留输入、输出、缓存、总 token 四列，输入不含缓存，缓存为读取与写入之和，窄窗口可横向滚动。
+- `Notifier` 同时检查 Claude 和 Codex，告警去重键与重置提醒按来源隔离，切换语言不会重复通知。
+- `0003_providers.sql` 已应用到正式 D1：保留旧 Claude 额度与历史，额度表主键改为 `(device_id, provider)`；会话与每日汇总增加 `source`。
+- `CloudSync` 上报两家额度、会话和每日 token；额度数值不变时按观察时间每 15 分钟补采样。Codex 数据时间仍取本机日志的真实观察时间。
+- 云空间概览改成双来源紧凑卡片；会话显示来源、模型与设备；分析页提供来源/设备筛选、默认全选的项目趋势、额度历史及最多 200 条分析记录。
+- 设置页支持自动/浅色/深色、自动/中文/English、网页内告警开关及 80/90/95% 阈值。偏好仅存当前浏览器。网页提醒只在页面打开时工作，系统横幅仍由 Mac App 负责。
+- 验证：`cd cloud && npm test && npm run typecheck`，测试使用实际 Hono 路由与临时 SQLite，覆盖迁移、双来源、用户隔离、前端交互及跨页面告警轮询；不访问生产数据库。测试需要现有 Node、Python 3 与项目已有 esbuild。
+- Worker 已发布；本机已安装并启动本次构建。浏览器自动预览连接超时，尚未完成桌面/手机布局的目视验收。
 
 **里程碑 3：hooks + 实时**
 
@@ -425,3 +441,10 @@ Mac 端：`Sources/Quotlet/Cloud.swift`（登录、退出、校验 token、请�
 
 - Apple Developer：给 iOS App 建 App ID `app.quotlet.ios`，开通 Sign in with Apple 和 Push Notifications；建 Services ID `app.quotlet.web`（域名 `app.quotlet.com`，回调 `/auth/apple/callback`）；建 APNs Key（.p8）
 - Google Cloud：OAuth 同意屏幕 + Web 客户端 ID（回调 `/auth/google/callback`）
+
+### 0.6.0 发布行为（2026-11-19）
+
+- Claude 接口默认 10 分钟刷新；session 事件实时更新本机统计，校准后的估算参与 90% 和 100% 提醒并带估算说明。
+- Claude / Codex 的 5 小时、周额度各自按窗口去重。达到阈值后按接口记录的重置时间安排恢复提醒。通知默认全部开启，首次启动请求系统权限，已有明确偏好继续保留。
+- 用量页恢复切换推荐。一家达到提醒阈值，另一家所有额度低于 70% 且有有效的 5 小时和周记录时显示。
+- 正式版使用 Developer ID 签名和 Apple 公证，打包 Apple 芯片与 Intel 通用架构。

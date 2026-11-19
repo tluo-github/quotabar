@@ -11,7 +11,7 @@ export const read = new Hono<{ Bindings: Env; Variables: AppVars }>()
 export const ONLINE_WINDOW = 3 * 60 * 1000
 
 const SESSION_COLS = `s.id, s.device_id, d.name AS device_name, d.last_seen_at AS device_seen_at,
-  s.project, s.title, s.model, s.status, s.status_detail, s.status_at, s.started_at, s.last_activity_at,
+  s.source, s.project, s.title, s.model, s.status, s.status_detail, s.status_at, s.started_at, s.last_activity_at,
   s.tokens_in, s.tokens_out, s.tokens_cache_read, s.tokens_cache_write, s.requests`
 
 interface SessionRow {
@@ -34,7 +34,7 @@ read.get('/overview', async (c) => {
   const t = now()
   const [usage, devices, sessions] = await db.batch([
     db.prepare(
-      `SELECT u.device_id, d.name AS device_name, u.plan, u.limits, u.fetched_at
+      `SELECT u.device_id, u.provider, d.name AS device_name, u.plan, u.limits, u.fetched_at
          FROM usage_latest u JOIN devices d ON d.id = u.device_id
         WHERE u.user_id = ? AND d.revoked_at IS NULL ORDER BY u.fetched_at DESC`,
     ).bind(user),
@@ -67,6 +67,8 @@ read.get('/sessions', async (c) => {
   if (status) { where.push('s.status = ?'); args.push(status) }
   const device = c.req.query('device')
   if (device) { where.push('s.device_id = ?'); args.push(device) }
+  const source = c.req.query('source')
+  if (source === 'claude' || source === 'codex') { where.push('s.source = ?'); args.push(source) }
   const days = Number(c.req.query('days'))
   if (days > 0) { where.push('s.last_activity_at >= ?'); args.push(t - Math.min(days, 365) * 86400_000) }
   // cursor = "<last_activity_at>:<id>"，上一页最后一条
@@ -116,13 +118,32 @@ read.get('/stats', async (c) => {
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 90)
     from = new Date(now() - (days - 1) * 86400_000).toISOString().slice(0, 10)
   }
+  const where = ['user_id = ?', 'day >= ?']
+  const args: (string | number)[] = [user, from]
+  const source = c.req.query('source')
+  const device = c.req.query('device')
+  if (source === 'claude' || source === 'codex') { where.push('source = ?'); args.push(source) }
+  if (device) { where.push('device_id = ?'); args.push(device) }
+  const filter = where.join(' AND ')
   const sums = `SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out,
     SUM(tokens_cache_read) AS tokens_cache_read, SUM(tokens_cache_write) AS tokens_cache_write, SUM(requests) AS requests,
     SUM(tokens_in + tokens_out + tokens_cache_read + tokens_cache_write) AS total`
-  const [daily, projects, models] = await db.batch([
-    db.prepare(`SELECT day, ${sums} FROM daily_tokens WHERE user_id = ? AND day >= ? GROUP BY day ORDER BY day`).bind(user, from),
-    db.prepare(`SELECT project, ${sums} FROM daily_tokens WHERE user_id = ? AND day >= ? GROUP BY project ORDER BY total DESC LIMIT 20`).bind(user, from),
-    db.prepare(`SELECT model, ${sums} FROM daily_tokens WHERE user_id = ? AND day >= ? GROUP BY model ORDER BY total DESC`).bind(user, from),
+  const [daily, projects, models, projectDaily] = await db.batch([
+    db.prepare(`SELECT day, ${sums} FROM daily_tokens WHERE ${filter} GROUP BY day ORDER BY day`).bind(...args),
+    db.prepare(`SELECT project, ${sums} FROM daily_tokens WHERE ${filter} GROUP BY project ORDER BY total DESC`).bind(...args),
+    db.prepare(`SELECT model, ${sums} FROM daily_tokens WHERE ${filter} GROUP BY model ORDER BY total DESC`).bind(...args),
+    db.prepare(`SELECT day, project, ${sums} FROM daily_tokens WHERE ${filter} GROUP BY day, project ORDER BY day`).bind(...args),
   ])
-  return c.json({ from, daily: daily.results, projects: projects.results, models: models.results })
+  return c.json({ from, daily: daily.results, projects: projects.results, models: models.results, project_daily: projectDaily.results })
+})
+
+/** 各设备、各来源的额度历史；只返回当前用户的数据。 */
+read.get('/usage-history', async (c) => {
+  const days = Math.min(Math.max(Number(c.req.query('days')) || 7, 1), 90)
+  const { results } = await c.env.DB.prepare(
+    `SELECT h.device_id, d.name AS device_name, h.provider, h.ts, h.five_hour, h.weekly
+       FROM usage_history h JOIN devices d ON d.id = h.device_id
+      WHERE d.user_id = ? AND d.revoked_at IS NULL AND h.ts >= ? ORDER BY h.ts`,
+  ).bind(c.get('user').id, now() - days * 86400_000).all()
+  return c.json({ history: results })
 })

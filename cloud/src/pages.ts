@@ -37,7 +37,7 @@ const githubIcon = raw(`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 
 export function loginPage(search: string) {
   return layout('登录 Quotlet', html`
 <h1>登录 Quotlet</h1>
-<p>登录后，可以在网站和手机上查看 Claude 额度、会话和执行状态。</p>
+<p>登录后，可以在网站和手机上查看 Claude 与 Codex 的额度、会话和用量趋势。</p>
 <a class="btn" href="/auth/github/start${search}">${githubIcon}使用 GitHub 登录</a>
 <p class="note">Apple 和 Google 登录稍后提供。</p>`)
 }

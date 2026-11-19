@@ -3,9 +3,9 @@
   "name": "app",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
-  // 正式地址 app.quotlet.com；workers.dev 先留着，旧版本的开发版还连着它
+  // 仪表盘和 API 只通过正式域名对外提供服务
   "routes": [{ "pattern": "app.quotlet.com", "custom_domain": true }],
-  "workers_dev": true,
+  "workers_dev": false,
   "preview_urls": false,
   // 网站静态文件；/api、/auth、/login 先交给 Worker 处理
   "assets": {

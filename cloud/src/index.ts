@@ -26,7 +26,7 @@ app.use('/api/devices', requireAuth)
 app.use('/api/devices/*', requireAuth)
 app.use('/api/auth/logout', requireAuth)
 app.use('/api/ingest/*', requireAuth)
-for (const p of ['/api/overview', '/api/sessions', '/api/sessions/*', '/api/stats']) app.use(p, requireAuth)
+for (const p of ['/api/overview', '/api/sessions', '/api/sessions/*', '/api/stats', '/api/usage-history']) app.use(p, requireAuth)
 
 app.route('/api/ingest', ingest)
 app.route('/api', read)
