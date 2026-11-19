@@ -13,7 +13,7 @@ const EN = {
   '接近上限': 'Near limit', '用量偏高': 'High usage', '健康': 'Healthy', '5 小时': '5 hours', '本周': 'Weekly', '重置': 'Resets',
   '刷新': 'Refresh', '更新于': 'Updated', '等待 Mac 上报额度': 'Waiting for quota from your Mac', '使用后由 Mac 自动同步': 'Syncs automatically after use on your Mac',
   '近期会话': 'Recent sessions', '今日会话 token': 'Tokens in today’s sessions', '个会话': 'sessions', '没有会话': 'No sessions', '所有设备': 'All devices',
-  '搜索标题或项目': 'Search title or project', '加载更多': 'Load more', '正在加载…': 'Loading…', '项目': 'Project', '来源': 'Provider', '模型': 'Model',
+  '搜索标题或项目': 'Search title or project', '搜索标题、项目或模型': 'Search title, project or model', 'token 用量': 'Token usage', '时间': 'Time', '未知模型': 'Unknown model', '用量条相对于当前列表中 token 最多的会话。': 'Usage bars are relative to the largest session in this list.', '查看全部会话': 'View all sessions', '加载更多': 'Load more', '正在加载…': 'Loading…', '项目': 'Project', '来源': 'Provider', '模型': 'Model',
   '输入': 'Input', '缓存读': 'Cache read', '缓存写': 'Cache write', '网页': 'Web', '开始': 'Started', '最后活动': 'Last activity', '用时': 'Duration', '请求': 'Requests', '状态': 'Status', '状态记录': 'Status history', '还没有状态记录': 'No status history yet', '← 会话': '← Sessions',
   '从未': 'Never', '等待 Mac 刷新': 'Waiting for your Mac to refresh', '每天的 token': 'Daily tokens', '按项目': 'By project', '按模型': 'By model',
   '活跃天数': 'Active days', '活跃日平均': 'Average per active day', '没有数据': 'No data', '查看数据表': 'View data table', '日期': 'Date',

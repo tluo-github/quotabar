@@ -107,3 +107,58 @@ test('停留在其他页面时也持续刷新额度告警', async () => {
   await settle()
   assert.equal(d.requests.filter((url) => url === '/api/overview').length, before + 1)
 })
+
+test('同名设备只展示一个下拉入口，默认选在线设备并保留独立 ID', async () => {
+  const d = dashboard(); await settle()
+  d.overview.devices = [
+    { id: 'offline-111111', name: '同一台 Mac', online: false, last_seen_at: Date.now() },
+    { id: 'online-222222', name: '同一台 Mac', online: true, last_seen_at: Date.now() - 60000 },
+  ]
+  d.overview.usage = d.overview.devices.map((device, i) => ({ provider: 'codex', device_id: device.id, fetched_at: Date.now(), limits: [{kind: 'session', percent: i ? 27 : 84}] }))
+  d.run('render()')
+  const selects = nodes(d.elements.view).filter((e) => e.tag === 'select')
+  assert.equal(selects.length, 1)
+  const options = nodes(selects[0]).filter((e) => e.tag === 'option')
+  assert.equal(options.length, 2)
+  assert.match(options[0].textContent, /111111/)
+  assert.match(options[1].textContent, /222222/)
+  assert.ok('selected' in options[1].attributes)
+  assert.ok(nodes(d.elements.view).some((e) => e.className === 'big' && e.textContent === '27%'))
+  selects[0].events.change({ target: { value: 'offline-111111' } })
+  assert.equal(d.run('state.usageDevice'), 'offline-111111')
+  assert.ok(nodes(d.elements.view).some((e) => e.className === 'big' && e.textContent === '84%'))
+})
+
+test('会话用量条按列表最大总 token 计算，模型独立显示并可以搜索', async () => {
+  const d = dashboard(); await settle()
+  d.run(`state.sessions.list = [
+    {id:'a',title:'First',source:'codex',project:'Alpha',model:'gpt-6.1-sol',device_name:'Mac',status:'done',started_at:Date.now()-20000,last_activity_at:Date.now(),tokens_in:10,tokens_out:10,tokens_cache_read:80},
+    {id:'b',title:'Second',source:'claude',project:'Beta',model:'claude-opus-5-5',device_name:'Mac',status:'done',started_at:Date.now()-10000,last_activity_at:Date.now(),tokens_in:20,tokens_out:5},
+    {id:'c',title:'Zero',source:'codex',project:'Gamma',model:null,device_name:'Mac',status:'ended',started_at:Date.now()-10000,last_activity_at:Date.now()}
+  ]; view.replaceChildren(sessionList(filteredSessions(), Date.now()))`)
+  const meters = nodes(d.elements.view).filter((e) => e.attributes.role === 'meter')
+  assert.equal(meters.length, 3)
+  assert.deepEqual(meters.map((e) => e.attributes['aria-valuemax']), ['100', '100', '100'])
+  assert.deepEqual(meters.map((e) => e.children[0].style.cssText), ['width:100%', 'width:25%', 'width:0%'])
+  assert.deepEqual(nodes(d.elements.view).filter((e) => e.className === 'session-model').map((e) => e.textContent), ['GPT-6.1-sol', 'Opus 5.5', '—'])
+  assert.ok(nodes(d.elements.view).some((e) => e.tag === 'a' && e.attributes.href === '#/sessions/b'))
+  d.run("state.search='opus 5.5'")
+  assert.equal(d.run('filteredSessions().length'), 1)
+  assert.equal(d.run('filteredSessions()[0].id'), 'b')
+})
+
+test('会话设备筛选向接口传递 ID，所有设备可恢复且保留分页', async () => {
+  const d = dashboard(); await settle()
+  d.context.fetch = async (url) => { d.requests.push(url); return {ok: true, status: 200, json: async () => ({sessions: [], next_cursor: 'next-page'})} }
+  d.run("location.hash='#/sessions'; state.sessions.key=sessionsKey(); render()")
+  nodes(d.elements.view).find((e) => e.tag === 'select').events.change({target: {value: 'mac'}})
+  await settle()
+  assert.ok(d.requests.includes('/api/sessions?device=mac'))
+  nodes(d.elements.view).find((e) => e.tag === 'button' && e.textContent === '加载更多').events.click()
+  await settle()
+  assert.ok(d.requests.includes('/api/sessions?device=mac&cursor=next-page'))
+  nodes(d.elements.view).find((e) => e.tag === 'select').events.change({target: {value: ''}})
+  await settle()
+  assert.equal(d.run('state.sessions.device'), '')
+  assert.ok(d.requests.includes('/api/sessions?'))
+})

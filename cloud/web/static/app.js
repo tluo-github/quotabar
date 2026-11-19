@@ -210,15 +210,19 @@ function chips(options, current, onPick) {
 function renderOverview(now) {
   const o = state.overview
   if (!o) return loading()
-  const device = o.devices.find((d) => d.id === state.usageDevice) || o.devices[0]
+  const device = o.devices.find((d) => d.id === state.usageDevice)
+    || [...o.devices].sort((a, b) => Number(b.online) - Number(a.online) || (b.last_seen_at || 0) - (a.last_seen_at || 0))[0]
   const usages = o.usage.filter((u) => u.device_id === device?.id)
   const today = o.sessions.filter((s) => sameDay(s.last_activity_at, now))
   const quota = el('section', { class: 'overview-panel overview-quota' },
     el('header', { class: 'head' },
-      el('div', {}, el('div', { class: 'overview-kicker', text: 'QUOTLET CLOUD' }), el('h1', { text: tr('用量概览') })),
-      el('button', { class: 'btn secondary small', text: tr('刷新'), onclick: () => loadRoute() })),
-    devicesStrip(o, now),
-    o.devices.length > 1 && chips(o.devices.map((d) => [d.id, d.name]), device?.id, (k) => { state.usageDevice = k; render() }),
+      el('h1', { text: tr('用量概览') }),
+      el('div', { class: 'overview-actions' },
+        device && devicePicker(o.devices, device.id, now, (id) => { state.usageDevice = id; render() }),
+        device && el('span', { class: 'device-status' },
+          el('span', { class: 'dot' + (device.online ? ' on' : ''), 'aria-hidden': 'true' }),
+          device.online ? tr('在线') : tr('离线') + ' · ' + ago(device.last_seen_at, now)),
+        el('button', { class: 'btn secondary small', text: tr('刷新'), onclick: () => loadRoute() }))),
     el('div', { class: 'provider-grid' }, ['claude', 'codex'].map((provider) => {
       const u = usages.find((x) => (x.provider || 'claude') === provider)
       const name = provider === 'codex' ? 'Codex' : 'Claude'
@@ -233,7 +237,7 @@ function renderOverview(now) {
     })))
   const sessions = el('section', { class: 'overview-panel overview-sessions' },
     el('header', { class: 'head' }, el('h2', { text: tr('最近的会话') }),
-      el('a', { class: 'link', href: '#/sessions', text: tr('查看全部会话 →') })),
+      el('a', { class: 'link', href: '#/sessions', text: tr('查看全部会话') })),
     chips([['all', '全部'], ['running', '执行中', o.sessions.filter((s) => s.status === 'running').length], ['waiting', '等待授权'], ['done', '已完成']],
       state.overviewFilter, (k) => { state.overviewFilter = k; render() }),
     sessionList((state.overviewFilter === 'all' ? o.sessions : o.sessions.filter((s) => s.status === state.overviewFilter)).slice(0, 8), now))
@@ -259,21 +263,25 @@ function limitCard(l, now) {
       el('span', { text: l.resets_at > now ? (lang() === 'en' ? 'In ' : '还有 ') + duration(l.resets_at - now) : tr('等待 Mac 刷新') })))
 }
 
-/** 每台 Mac 一个小胶囊：在线圆点 + 名字 + 状态 */
-function devicesStrip(o, now) {
-  if (!o.devices.length) return null
-  const live = {}
-  for (const s of o.sessions) if (isLive(s)) live[s.device_id] = (live[s.device_id] || 0) + 1
-  return el('div', { class: 'devices' }, o.devices.map((d) => el('div', { class: 'devchip' },
-    el('span', { class: 'dot' + (d.online ? ' on' : ''), 'aria-hidden': 'true' }),
-    el('b', { text: d.name }),
-    el('span', { class: 'muted', text: (d.online ? tr('在线') : tr('离线') + ' · ' + ago(d.last_seen_at, now)) }))))
+/** 同名设备保留独立记录，在选项里补上状态和短 ID，避免混淆。 */
+function devicePicker(devices, selected, now, onPick, allowAll = false) {
+  return el('label', { class: 'device-picker' },
+    el('span', { class: 'filter-label', text: tr('设备') }),
+    el('select', { 'aria-label': tr('设备'), onchange: (event) => onPick(event.target.value) },
+      allowAll && el('option', { value: '', selected: selected === '', text: tr('所有设备') }),
+      devices.map((device) => {
+        const name = device.name || 'Mac'
+        const duplicate = devices.filter((other) => other.name === device.name).length > 1
+        const status = device.online ? tr('在线') : tr('离线') + ' · ' + ago(device.last_seen_at, now)
+        const suffix = duplicate ? ' · ' + device.id.slice(-6) : ''
+        return el('option', { value: device.id, selected: selected === device.id, text: name + ' · ' + status + suffix })
+      })))
 }
 
 /** 按天分组的会话列表，整行可点，设备始终显示。 */
 function sessionList(list, now) {
   if (!list.length) return el('div', { class: 'empty', text: tr('没有会话') })
-  const multi = true
+  const maxTokens = Math.max(1, ...list.map(totalTokens))
   const groups = []
   for (const s of list) {
     // 进行中的会话归到今天
@@ -282,24 +290,35 @@ function sessionList(list, now) {
     if (!g || g.key !== key) groups.push(g = { key, items: [] })
     g.items.push(s)
   }
-  return el('div', { class: 'list' }, el('div', { class: 'session-head' }, ['状态', '会话', '设备', 'token'].map((h) => el('span', { text: tr(h) }))), groups.map((g) => el('div', { class: 'group' },
-    el('div', { class: 'day' },
-      el('b', { text: dayLabel(g.key, now) }),
-      el('span', { class: 'num', text: `${g.items.length} ${tr('个会话')} · ${fmtTokens(g.items.reduce((a, s) => a + totalTokens(s), 0))}` })),
-    g.items.map((s) => sessionRow(s, now, multi)))))
+  return el('div', { class: 'list' },
+    el('p', { class: 'list-note', text: tr('用量条相对于当前列表中 token 最多的会话。') }),
+    el('div', { class: 'session-head' },
+      ['状态', '会话', '模型', '设备', 'token 用量', '时间'].map((heading) => el('span', { text: tr(heading) }))),
+    groups.map((g) => el('div', { class: 'group' },
+      el('div', { class: 'day' },
+        el('b', { text: dayLabel(g.key, now) }),
+        el('span', { class: 'num', text: `${g.items.length} ${tr('个会话')} · ${fmtTokens(g.items.reduce((a, s) => a + totalTokens(s), 0))}` })),
+      g.items.map((s) => sessionRow(s, now, maxTokens)))))
 }
 
-function sessionRow(s, now, multi) {
-  const meta = [s.title ? s.project : null, s.source === 'codex' ? 'Codex' : 'Claude Code', modelName(s.model)].filter(Boolean)
+function sessionRow(s, now, maxTokens) {
+  const meta = [s.title ? s.project : null, s.source === 'codex' ? 'Codex' : 'Claude Code'].filter(Boolean)
+  const tokens = totalTokens(s)
+  const fraction = Math.max(0, Math.min(1, tokens / maxTokens))
   return el('a', { class: 'srow s-' + s.status, href: '#/sessions/' + encodeURIComponent(s.id) },
     statusTag(s.status),
     el('div', { class: 'main' },
       el('div', { class: 't', text: s.title || s.project }),
       el('div', { class: 'meta' }, meta.map((m) => el('span', { text: m })), s.status_detail && el('span', { class: 'detail', text: s.status_detail }))),
+    el('span', { class: 'session-model', text: modelName(s.model) || '—', title: s.model || tr('未知模型') }),
     el('span', { class: 'session-device', text: s.device_name || 'Mac', title: s.device_name || 'Mac' }),
-    el('div', { class: 'side' },
-      el('div', { class: 'tok num', text: fmtTokens(totalTokens(s)) }),
-      el('div', { class: 'when num', text: sessionTime(s, now) })))
+    el('div', { class: 'session-usage' },
+      el('div', { class: 'tok num', text: fmtTokens(tokens) }),
+      el('div', { class: 'session-token-track source-' + (s.source === 'codex' ? 'codex' : 'claude'),
+        role: 'meter', 'aria-label': tr('token 用量'), 'aria-valuemin': '0', 'aria-valuemax': String(maxTokens),
+        'aria-valuenow': String(tokens), 'aria-valuetext': tokens.toLocaleString() + ' token' },
+      el('span', { style: 'width:' + fraction * 100 + '%' }))),
+    el('span', { class: 'session-time num', text: sessionTime(s, now) }))
 }
 
 // 会话列表
@@ -309,18 +328,20 @@ const SESSION_FILTERS = [['', '全部'], ['running', '执行中'], ['waiting', '
 function renderSessions(now) {
   const st = state.sessions
   const macs = state.overview ? state.overview.devices : []
-  return el('section', {},
+  return el('section', { class: 'sessions-page' },
     el('div', { class: 'head' },
       el('h1', { text: tr('会话') }),
       chips(SESSION_FILTERS, st.status, (k) => { st.status = k; loadSessions().catch(handleLoadError) })),
-    chips([['', '全部来源'], ['claude', 'Claude Code'], ['codex', 'Codex']], state.sessionSource, (k) => { state.sessionSource = k; loadSessions().catch(handleLoadError) }),
-    el('input', { class: 'search', type: 'search', placeholder: tr('搜索标题或项目'), value: state.search, 'aria-label': tr('搜索标题或项目'), oninput: (e) => { state.search = e.target.value; const list = document.getElementById('session-results'); list.replaceChildren(sessionList(filteredSessions(), now)) } }),
-    macs.length > 1 && chips([['', '所有设备'], ...macs.map((d) => [d.id, d.name])], st.device, (k) => { st.device = k; loadSessions().catch(handleLoadError) }),
+    el('div', { class: 'session-toolbar' },
+      chips([['', '全部来源'], ['claude', 'Claude Code'], ['codex', 'Codex']], state.sessionSource, (k) => { state.sessionSource = k; loadSessions().catch(handleLoadError) }),
+      macs.length > 0 && devicePicker(macs, st.device, now, (id) => { st.device = id; loadSessions().catch(handleLoadError) }, true),
+      el('input', { class: 'search', type: 'search', placeholder: tr('搜索标题、项目或模型'), value: state.search, 'aria-label': tr('搜索标题、项目或模型'),
+        oninput: (e) => { state.search = e.target.value; const list = document.getElementById('session-results'); list.replaceChildren(sessionList(filteredSessions(), now)) } })),
     st.key !== sessionsKey() ? loading() : el('div', { id: 'session-results' }, sessionList(filteredSessions(), now)),
     st.next && el('button', { class: 'btn secondary small more', type: 'button', text: tr('加载更多'), onclick: () => loadSessions(true).catch(handleLoadError) }))
 }
 
-function filteredSessions() { const q = state.search.trim().toLowerCase(); return state.sessions.list.filter((s) => !q || [s.title, s.project, s.device_name].some((v) => v?.toLowerCase().includes(q))) }
+function filteredSessions() { const q = state.search.trim().toLowerCase(); return state.sessions.list.filter((s) => !q || [s.title, s.project, s.model, modelName(s.model), s.device_name].some((v) => v?.toLowerCase().includes(q))) }
 
 const sessionsKey = () => `${state.sessions.status}|${state.sessions.device}|${state.sessionSource}`
 
