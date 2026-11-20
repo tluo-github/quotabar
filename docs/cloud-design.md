@@ -448,3 +448,16 @@ Mac 端：`Sources/Quotlet/Cloud.swift`（登录、退出、校验 token、请�
 - Claude / Codex 的 5 小时、周额度各自按窗口去重。达到阈值后按接口记录的重置时间安排恢复提醒。通知默认全部开启，首次启动请求系统权限，已有明确偏好继续保留。
 - 用量页恢复切换推荐。一家达到提醒阈值，另一家所有额度低于 70% 且有有效的 5 小时和周记录时显示。
 - 正式版使用 Developer ID 签名和 Apple 公证，打包 Apple 芯片与 Intel 通用架构。
+
+### 0.7.0 / 0.7.1 三来源（Gemini）、实时吞吐与官网更新（2026-11-20）
+
+- **Antigravity（Gemini）接入（`Gemini.swift`）**：通过 `~/.gemini/antigravity/daemon/hub_*.json` 发现本机 `127.0.0.1` 语言服务器，以 ConnectRPC 查询 `RetrieveUserQuotaSummary` 与 `GetLoadCodeAssist` 并在 `gemini-usage.json` 本地缓存；会话与 token 从 `~/.gemini/antigravity/brain/*/transcript.jsonl` 和只读 `conversation_summaries.db` 提取。支持 5 小时、每周、Gemini 4 Argon 周额度与 Claude / GPT 共享窗口，纳入跨工具切换建议（`Advice.swift`）、通知（`Notifier.swift`）与用量历史堆叠柱图（`History.swift`）。
+- **实时输出吞吐（`Throughput.swift` / `ThroughputView.swift`）**：主面板顶部独立 1 秒刷新时钟渲染总 `tok/s` 仪表、1 / 2 / 5 分钟输出曲线与三家实时明细，顶部右侧提供「状态栏来源」下拉切换（Claude / Codex / Gemini）。
+- **Quotlet Cloud 三来源打通（`0.7.1`）**：
+  - 客户端 `CloudSync.swift` 补齐 `provider: "gemini"` 额度上报（含 15 分钟保底采样）。
+  - 服务端 `ingest.ts` 与 `read.ts` 的 `provider` / `source` 放开至 `claude | codex | gemini`，并已回填远端 D1 中历史 `gemini-*` 会话与每日统计的 `source`。
+  - 网页后台（`app.quotlet.com`）概览页升级为三列卡片并支持 `session_scoped` / `daily_*` 窗口与小数百分比；会话页、分析页与网页内告警均补齐 Gemini 筛选、紫色用量条（`--purple`）与 Gemini 模型名格式化。
+- **官网与发布（`quotlet.com`）**：
+  - 重新生成四国语言（zh / en / ja / ko）浅色与深色共 32 张最新截图，同步重写官网四国语言文案，突出 Claude / Codex / Gemini 与实时 `tok/s` 吞吐。
+  - `v0.7.0`、`v0.7.1` 通用架构包均已通过 Developer ID 签名、Apple 公证、装订票据及 `spctl` 校验；`Casks/quotlet.rb`、GitHub Releases、`quotlet.com` 与 `app.quotlet.com` 已全部同步发布上线。
+  - 验证：40 项 Swift 单元测试、12 项云端前后端测试及 `tsc --noEmit` 全部通过。
