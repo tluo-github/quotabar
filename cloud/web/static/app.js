@@ -293,7 +293,7 @@ function sessionList(list, now) {
   return el('div', { class: 'list' },
     el('p', { class: 'list-note', text: tr('用量条相对于当前列表中 token 最多的会话。') }),
     el('div', { class: 'session-head' },
-      ['状态', '会话', '模型', '设备', 'token 用量', '时间'].map((heading) => el('span', { text: tr(heading) }))),
+      ['状态', '会话', '项目', '来源', '模型', '设备', 'token 用量', '时间'].map((heading) => el('span', { text: tr(heading) }))),
     groups.map((g) => el('div', { class: 'group' },
       el('div', { class: 'day' },
         el('b', { text: dayLabel(g.key, now) }),
@@ -302,14 +302,15 @@ function sessionList(list, now) {
 }
 
 function sessionRow(s, now, maxTokens) {
-  const meta = [s.title ? s.project : null, s.source === 'codex' ? 'Codex' : 'Claude Code'].filter(Boolean)
+  const status = statusTag(s.status)
+  if (s.status_detail) status.setAttribute('title', s.status_detail)
   const tokens = totalTokens(s)
   const fraction = Math.max(0, Math.min(1, tokens / maxTokens))
   return el('a', { class: 'srow s-' + s.status, href: '#/sessions/' + encodeURIComponent(s.id) },
-    statusTag(s.status),
-    el('div', { class: 'main' },
-      el('div', { class: 't', text: s.title || s.project }),
-      el('div', { class: 'meta' }, meta.map((m) => el('span', { text: m })), s.status_detail && el('span', { class: 'detail', text: s.status_detail }))),
+    status,
+    el('span', { class: 'session-title', text: s.title || s.project || '—', title: s.title || s.project }),
+    el('span', { class: 'session-project', text: s.project || '—', title: s.project }),
+    el('span', { class: 'session-source', text: s.source === 'codex' ? 'Codex' : 'Claude Code' }),
     el('span', { class: 'session-model', text: modelName(s.model) || '—', title: s.model || tr('未知模型') }),
     el('span', { class: 'session-device', text: s.device_name || 'Mac', title: s.device_name || 'Mac' }),
     el('div', { class: 'session-usage' },

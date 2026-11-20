@@ -55,7 +55,7 @@ h2 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -.01em }
 section { display: flex; flex-direction: column; gap: 14px }
 .plan { font-size: 13px; font-weight: 600; color: var(--fg2); padding: 3px 10px; border-radius: 999px; background: var(--fill) }
 
-.overview { display: grid; gap: 18px; min-width: 0 }
+.overview { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; min-width: 0 }
 .overview-panel { border: 1px solid var(--line); border-radius: 22px; background: var(--panel); padding: clamp(14px, 3vw, 28px) }
 .overview-kicker { color: var(--green-ink); font-size: 11px; font-weight: 700; letter-spacing: .14em }
 .overview-quota .quota-head { padding-top: 14px; border-top: 1px solid var(--line) }
@@ -98,32 +98,29 @@ section { display: flex; flex-direction: column; gap: 14px }
 .chip .n { margin-left: 6px; font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--ink); color: var(--inkfg) }
 
 /* ---------- 会话列表 ---------- */
-.list { display: flex; flex-direction: column; gap: 18px; min-width: 0 }
-.group { display: flex; flex-direction: column; gap: 0; min-width: 0 }
+.list { display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow-x: auto }
+/* 窄屏横向滚动，保持表头与各列对齐，避免把每个会话堆成多行。 */
+.group { display: flex; flex-direction: column; gap: 0; min-width: 1040px }
 .list-note { margin: 0; color: var(--muted); font-size: 13px }
 .day { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0; font-size: 13px; color: var(--muted) }
 .day b { font-size: 14px; color: var(--fg); font-weight: 600 }
 .srow, .session-head {
   display: grid;
-  grid-template-columns: 82px minmax(180px, 1.7fr) minmax(110px, 1fr) minmax(110px, 1fr) minmax(120px, 1fr) 130px;
+  grid-template-columns: 82px minmax(160px, 2fr) minmax(90px, 1fr) 84px minmax(100px, 1fr) minmax(100px, 1.1fr) minmax(100px, 1fr) 126px;
   align-items: center; gap: 12px; min-width: 0;
 }
-.session-head { color: var(--muted); font-size: 14px; border-bottom: 1px solid var(--line); padding: 8px 0 12px }
+.session-head { color: var(--muted); font-size: 13px; border-bottom: 1px solid var(--line); padding: 8px 0; min-width: 1040px }
 .session-head span:last-child { text-align: right }
-.srow { padding: 18px 0; color: inherit; text-decoration: none; border-bottom: 1px solid var(--line) }
+.srow { padding: 8px 0; color: inherit; text-decoration: none; border-bottom: 1px solid var(--line) }
 .srow:last-child { border-bottom: 0 }
 .srow:hover { background: var(--hover) }
 .srow.s-waiting { background: var(--amber-tint) }
-.srow .main { min-width: 0 }
-.srow .t { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.srow .meta { display: flex; gap: 10px; font-size: 13px; color: var(--muted); min-width: 0; margin-top: 3px }
-.srow .meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.srow .meta .detail { color: var(--amber-ink) }
-.session-model, .session-device { font-size: 14px; color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0 }
-.session-time { font-size: 13px; color: var(--muted); text-align: right }
-.session-usage { min-width: 0 }
-.srow .tok { font-size: 14px; font-weight: 600; text-align: right; margin-bottom: 7px }
-.session-token-track { height: 5px; background: var(--track); border-radius: 99px; overflow: hidden }
+.session-title, .session-project, .session-source, .session-model, .session-device { font-size: 13px; color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0 }
+.session-title { font-size: 14px; font-weight: 600; color: var(--fg) }
+.session-time { font-size: 12px; color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.session-usage { display: flex; align-items: center; gap: 8px; min-width: 0 }
+.srow .tok { font-size: 13px; font-weight: 600; text-align: right; min-width: 48px; flex: none }
+.session-token-track { flex: 1; height: 4px; background: var(--track); border-radius: 99px; overflow: hidden }
 .session-token-track span { display: block; height: 100%; border-radius: inherit; background: var(--data) }
 .session-token-track.source-codex span { background: var(--blue) }
 .session-toolbar, .overview-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-width: 0 }
@@ -310,14 +307,6 @@ h2 { font-size: 16px }
 .alert-toast .sub { font-size: 11px; margin-top: 3px }
 .dismiss { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 20px; line-height: 1; padding: 0 3px }
 @media (max-width: 940px) {
-  .session-head { display: none }
-  .srow { grid-template-columns: 90px minmax(0, 1fr) 150px; gap: 8px 16px }
-  .srow .st { grid-column: 1; grid-row: 1 }
-  .srow .main { grid-column: 2; grid-row: 1 }
-  .session-model { grid-column: 2; grid-row: 2 }
-  .session-device { grid-column: 2; grid-row: 3 }
-  .session-usage { grid-column: 3; grid-row: 1 / 3 }
-  .session-time { grid-column: 3; grid-row: 3 }
   .trend-layout { grid-template-columns: 1fr }
   .project-legend { max-height: 220px }
   .summary-strip > div { flex-direction: column; gap: 4px; padding: 0 14px }
@@ -336,13 +325,6 @@ h2 { font-size: 16px }
   .summary-strip > div { padding: 0 10px }
   .summary-strip .sub { font-size: 10px }
   .summary-strip strong { font-size: 19px }
-  .srow { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; padding: 12px 0 }
-  .srow .st { grid-column: 1; grid-row: 1 }
-  .srow .main { grid-column: 1 / -1; grid-row: 2 }
-  .session-model { grid-column: 1; grid-row: 3 }
-  .session-device { grid-column: 1; grid-row: 4; font-size: 12px }
-  .session-usage { grid-column: 2; grid-row: 3 / 5; width: 100px; align-self: center }
-  .session-time { grid-column: 2; grid-row: 1 }
   .device-picker, .overview-actions { width: 100% }
   .device-picker select { flex: 1; width: 0; min-width: 0 }
   .overview-actions .device-picker select { width: 0 }
