@@ -53,6 +53,10 @@ function list(v: unknown, max: number): Record<string, unknown>[] | null {
 
 const SESSION_ID = /^[\w-]{1,64}$/
 const DAY = /^\d{4}-\d{2}-\d{2}$/
+const PROVIDERS = new Set(['claude', 'codex', 'gemini'])
+function providerName(v: unknown): 'claude' | 'codex' | 'gemini' {
+  return typeof v === 'string' && PROVIDERS.has(v) ? (v as 'claude' | 'codex' | 'gemini') : 'claude'
+}
 
 // ---------- 心跳 ----------
 
@@ -79,7 +83,7 @@ ingest.put('/usage', async (c) => {
     severity: str(l.severity, 20),
   }))
   const device = c.get('device')
-  const provider = b.provider === 'codex' ? 'codex' : 'claude'
+  const provider = providerName(b.provider)
   const fetchedAt = ts(b.fetched_at, now())
   const fiveHour = limits.find((l) => l.kind === 'session')?.percent ?? null
   const weekly = limits.find((l) => l.kind === 'weekly_all')?.percent ?? null
@@ -117,7 +121,7 @@ ingest.post('/sessions', async (c) => {
     const last = ts(s.last_activity_at, t)
     return [{
       id,
-      source: s.source === 'codex' ? 'codex' : 'claude',
+      source: providerName(s.source),
       project: str(s.project, 120) ?? '?',
       title: str(s.title, 200),
       model: str(s.model, 80),
@@ -226,7 +230,7 @@ ingest.put('/daily', async (c) => {
     if (typeof r.day !== 'string' || !DAY.test(r.day)) return []
     return [{
       day: r.day,
-      source: r.source === 'codex' ? 'codex' : 'claude',
+      source: providerName(r.source),
       project: str(r.project, 120) ?? '?',
       model: str(r.model, 80) ?? '?',
       tokens_in: int(r.tokens_in),

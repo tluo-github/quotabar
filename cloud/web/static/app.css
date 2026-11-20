@@ -7,7 +7,7 @@
   --green: light-dark(#218459, #62c897); --green-ink: light-dark(#137548, #76dba6); --green-tint: light-dark(#e6f3e9, #1b3728);
   --amber: light-dark(#e8a300, #f0b429); --amber-ink: light-dark(#805400, #f5c451); --amber-tint: light-dark(#fdf4de, #3a3018);
   --red: light-dark(#ce3b3c, #ff7971); --red-ink: light-dark(#ad282f, #ff9489); --red-tint: light-dark(#fcecee, #3f2426);
-  --blue: light-dark(#285ca3, #a2c5ff); --data: light-dark(#c8643f, #d67352); --data-strong: light-dark(#9a4426, #f4a588);
+  --blue: light-dark(#285ca3, #a2c5ff); --purple: light-dark(#6e45e2, #9d7bfa); --data: light-dark(#c8643f, #d67352); --data-strong: light-dark(#9a4426, #f4a588);
   --track: light-dark(#18271e1a, #eef4ed26);
   color-scheme: light dark;
 }
@@ -123,6 +123,7 @@ section { display: flex; flex-direction: column; gap: 14px }
 .session-token-track { flex: 1; height: 4px; background: var(--track); border-radius: 99px; overflow: hidden }
 .session-token-track span { display: block; height: 100%; border-radius: inherit; background: var(--data) }
 .session-token-track.source-codex span { background: var(--blue) }
+.session-token-track.source-gemini span { background: var(--purple) }
 .session-toolbar, .overview-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-width: 0 }
 .session-toolbar { padding: 16px 0; border-block: 1px solid var(--line) }
 .session-toolbar .search { flex: 1 1 230px; width: auto; min-width: 0; margin-left: auto }
@@ -248,10 +249,11 @@ h2 { font-size: 16px }
 .overview-panel { border-radius: 16px; padding: 24px; gap: 18px }
 .overview-quota { background: transparent; border: 0; padding: 0; gap: 18px }
 .overview-kicker { color: var(--muted); font-size: 10px; letter-spacing: .16em; margin-bottom: 4px }
-.provider-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px }
+.provider-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px }
 .provider-card { padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); gap: 16px }
 .provider-icon { width: 28px; height: 28px; display: grid; place-items: center; font-size: 24px; color: var(--data) }
 .provider-codex .provider-icon { color: var(--blue); font-size: 22px }
+.provider-gemini .provider-icon { color: var(--purple); font-size: 22px }
 .plan { border-radius: 5px; padding: 2px 7px; font-size: 11px }
 .health { font-size: 11px; padding: 3px 8px; font-weight: 600 }
 .limit, .limit.l-ok, .limit.l-warn, .limit.l-crit { background: transparent; border-radius: 0; padding: 0; display: grid; grid-template-columns: 1fr auto; gap: 8px 18px }
@@ -307,6 +309,7 @@ h2 { font-size: 16px }
 .alert-toast .sub { font-size: 11px; margin-top: 3px }
 .dismiss { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 20px; line-height: 1; padding: 0 3px }
 @media (max-width: 940px) {
+  .provider-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) }
   .trend-layout { grid-template-columns: 1fr }
   .project-legend { max-height: 220px }
   .summary-strip > div { flex-direction: column; gap: 4px; padding: 0 14px }

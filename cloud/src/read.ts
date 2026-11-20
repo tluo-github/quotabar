@@ -68,7 +68,7 @@ read.get('/sessions', async (c) => {
   const device = c.req.query('device')
   if (device) { where.push('s.device_id = ?'); args.push(device) }
   const source = c.req.query('source')
-  if (source === 'claude' || source === 'codex') { where.push('s.source = ?'); args.push(source) }
+  if (source === 'claude' || source === 'codex' || source === 'gemini') { where.push('s.source = ?'); args.push(source) }
   const days = Number(c.req.query('days'))
   if (days > 0) { where.push('s.last_activity_at >= ?'); args.push(t - Math.min(days, 365) * 86400_000) }
   // cursor = "<last_activity_at>:<id>"，上一页最后一条
@@ -122,7 +122,7 @@ read.get('/stats', async (c) => {
   const args: (string | number)[] = [user, from]
   const source = c.req.query('source')
   const device = c.req.query('device')
-  if (source === 'claude' || source === 'codex') { where.push('source = ?'); args.push(source) }
+  if (source === 'claude' || source === 'codex' || source === 'gemini') { where.push('source = ?'); args.push(source) }
   if (device) { where.push('device_id = ?'); args.push(device) }
   const filter = where.join(' AND ')
   const sums = `SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out,

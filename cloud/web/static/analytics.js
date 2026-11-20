@@ -1,7 +1,7 @@
 'use strict'
 const SERIES_COLORS = ['#c46c47', '#4276db', '#27936b', '#9c69c7', '#c7588b', '#298f9e', '#ad8324', '#7375a8']
 function sourcePicker() {
-  return chips([['', '全部来源'], ['claude', 'Claude Code'], ['codex', 'Codex']], state.statsSource,
+  return chips([['', '全部来源'], ['claude', 'Claude Code'], ['codex', 'Codex'], ['gemini', 'Gemini']], state.statsSource,
     (k) => { state.statsSource = k; state.stats = null; render(); loadStats().catch(handleLoadError) })
 }
 function statsDevicePicker() {
@@ -35,7 +35,7 @@ function usageHistory() {
   const groups = new Map()
   for (const r of rows) {
     const key = r.device_id + ':' + r.provider
-    if (!groups.has(key)) groups.set(key, { id: `${r.provider === 'codex' ? 'Codex' : 'Claude'} · ${r.device_name}`, color: SERIES_COLORS[groups.size % SERIES_COLORS.length], points: [] })
+    if (!groups.has(key)) groups.set(key, { id: `${providerName(r.provider)} · ${r.device_name}`, color: SERIES_COLORS[groups.size % SERIES_COLORS.length], points: [] })
     if (r[metric] != null) groups.get(key).points.push({ t: r.ts, v: r[metric] })
   }
   const series = [...groups.values()].filter((s) => s.points.length)
@@ -47,7 +47,7 @@ function usageHistory() {
       el('div', { class: 'table-scroll' }, el('table', {},
         el('thead', {}, el('tr', {}, ['日期', '来源', '设备', '5 小时', '本周'].map((h) => el('th', { text: tr(h) })))),
         el('tbody', {}, rows.slice().reverse().slice(0, 200).map((r) => el('tr', {},
-          [md(r.ts) + ' ' + hm(r.ts), r.provider === 'codex' ? 'Codex' : 'Claude', r.device_name, r.five_hour == null ? '—' : r.five_hour + '%', r.weekly == null ? '—' : r.weekly + '%'].map((v) => el('td', { text: String(v) })))))))),
+          [md(r.ts) + ' ' + hm(r.ts), providerName(r.provider), r.device_name, r.five_hour == null ? '—' : r.five_hour + '%', r.weekly == null ? '—' : r.weekly + '%'].map((v) => el('td', { text: String(v) })))))))),
     el('p', { class: 'sub', text: tr('额度历史由 Mac 同步后记录，最多保留 90 天。') }))
 }
 function timeChart(series) {

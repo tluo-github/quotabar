@@ -78,10 +78,21 @@ function resetMoment(t, now) {
   return `${d.getMonth() + 1}月${d.getDate()}日 周${WEEK[d.getDay()]} ${hm(t)}`
 }
 
-/** claude-opus-5-5 → Opus 5.5 */
+/** claude-opus-5-5 → Opus 5.5；gemini-4-neon-high → Gemini 4 Neon (High) */
 function modelName(id) {
   if (!id) return ''
-  if (!id.startsWith('claude-')) return id.replace(/^gpt-/, 'GPT-')
+  if (/^gpt/i.test(id)) return 'GPT' + id.slice(3)
+  if (/^gemini-/i.test(id)) {
+    const parts = id.split('-')
+    let effort = null
+    if (['low', 'medium', 'high'].includes((parts[parts.length - 1] || '').toLowerCase())) {
+      const last = parts.pop()
+      effort = last[0].toUpperCase() + last.slice(1).toLowerCase()
+    }
+    const base = parts.map((p) => (/^[a-z]/i.test(p) ? p[0].toUpperCase() + p.slice(1) : p)).join(' ')
+    return effort ? `${base} (${effort})` : base
+  }
+  if (!id.startsWith('claude-')) return id
   const parts = id.split('-')
   if (parts[0] === 'claude') parts.shift()
   if (/^\d{8}$/.test(parts[parts.length - 1] || '')) parts.pop()
@@ -98,13 +109,20 @@ function level(p, severity) {
 
 function limitTitle(l) {
   if (l.kind === 'session') return tr('5 小时')
+  if (l.kind === 'session_scoped') return (l.scope ? l.scope + ' · ' : '') + tr('5 小时')
+  if (l.kind === 'daily_all') return tr('今日')
+  if (l.kind === 'daily_scoped') return (l.scope ? l.scope + ' · ' : '') + tr('今日')
   if (l.kind === 'weekly_all') return tr('本周')
   if (l.kind === 'weekly_scoped') return tr('本周') + ' · ' + (l.scope || '指定范围')
   return l.title || l.kind
 }
 
 /** 额度窗口长度：用来画“时间进度”刻度，和 Mac 端一样 */
-const WINDOW = { session: 5 * 3600000, weekly_all: 7 * 86400000, weekly_scoped: 7 * 86400000 }
+const WINDOW = {
+  session: 5 * 3600000, session_scoped: 5 * 3600000,
+  daily_all: 86400000, daily_scoped: 86400000,
+  weekly_all: 7 * 86400000, weekly_scoped: 7 * 86400000,
+}
 
 // 状态：圆点 + 文字。已完成最常见，所以最安静；执行中和等待授权要醒目
 const STATUS = {
@@ -223,13 +241,14 @@ function renderOverview(now) {
           el('span', { class: 'dot' + (device.online ? ' on' : ''), 'aria-hidden': 'true' }),
           device.online ? tr('在线') : tr('离线') + ' · ' + ago(device.last_seen_at, now)),
         el('button', { class: 'btn secondary small', text: tr('刷新'), onclick: () => loadRoute() }))),
-    el('div', { class: 'provider-grid' }, ['claude', 'codex'].map((provider) => {
+    el('div', { class: 'provider-grid' }, ['claude', 'codex', 'gemini'].map((provider) => {
       const u = usages.find((x) => (x.provider || 'claude') === provider)
-      const name = provider === 'codex' ? 'Codex' : 'Claude'
+      const name = providerName(provider)
+      const icon = provider === 'codex' ? '⌘' : provider === 'gemini' ? '✦' : '✳'
       const worst = u?.limits.map((l) => level(l.percent, l.severity)).sort((a, b) => b.rank - a.rank)[0]
       return el('section', { class: 'provider-card provider-' + provider },
         el('header', { class: 'head' },
-          el('div', { class: 'title' }, el('span', { class: 'provider-icon', text: provider === 'codex' ? '⌘' : '✳', 'aria-hidden': 'true' }),
+          el('div', { class: 'title' }, el('span', { class: 'provider-icon', text: icon, 'aria-hidden': 'true' }),
             el('h2', { text: name }), u?.plan && el('span', { class: 'plan', text: u.plan })),
           worst && el('span', { class: 'health h-' + worst.key, text: tr(worst.name) })),
         u?.limits.length ? u.limits.map((l) => limitCard(l, now)) : el('div', { class: 'quota-empty', text: tr('等待 Mac 上报额度') }),
@@ -249,7 +268,7 @@ function renderOverview(now) {
 
 function limitCard(l, now) {
   const lv = level(l.percent, l.severity)
-  const p = Math.round(l.percent)
+  const p = Math.round(l.percent * 10) / 10
   const win = WINDOW[l.kind]
   const elapsed = win && l.resets_at ? Math.min(Math.max(1 - (l.resets_at - now) / win, 0), 1) : null
   return el('div', { class: 'limit l-' + lv.key },
@@ -310,12 +329,12 @@ function sessionRow(s, now, maxTokens) {
     status,
     el('span', { class: 'session-title', text: s.title || s.project || '—', title: s.title || s.project }),
     el('span', { class: 'session-project', text: s.project || '—', title: s.project }),
-    el('span', { class: 'session-source', text: s.source === 'codex' ? 'Codex' : 'Claude Code' }),
+    el('span', { class: 'session-source', text: sourceLabel(s.source) }),
     el('span', { class: 'session-model', text: modelName(s.model) || '—', title: s.model || tr('未知模型') }),
     el('span', { class: 'session-device', text: s.device_name || 'Mac', title: s.device_name || 'Mac' }),
     el('div', { class: 'session-usage' },
       el('div', { class: 'tok num', text: fmtTokens(tokens) }),
-      el('div', { class: 'session-token-track source-' + (s.source === 'codex' ? 'codex' : 'claude'),
+      el('div', { class: 'session-token-track source-' + sourceClass(s.source),
         role: 'meter', 'aria-label': tr('token 用量'), 'aria-valuemin': '0', 'aria-valuemax': String(maxTokens),
         'aria-valuenow': String(tokens), 'aria-valuetext': tokens.toLocaleString() + ' token' },
       el('span', { style: 'width:' + fraction * 100 + '%' }))),
@@ -334,7 +353,7 @@ function renderSessions(now) {
       el('h1', { text: tr('会话') }),
       chips(SESSION_FILTERS, st.status, (k) => { st.status = k; loadSessions().catch(handleLoadError) })),
     el('div', { class: 'session-toolbar' },
-      chips([['', '全部来源'], ['claude', 'Claude Code'], ['codex', 'Codex']], state.sessionSource, (k) => { state.sessionSource = k; loadSessions().catch(handleLoadError) }),
+      chips([['', '全部来源'], ['claude', 'Claude Code'], ['codex', 'Codex'], ['gemini', 'Gemini']], state.sessionSource, (k) => { state.sessionSource = k; loadSessions().catch(handleLoadError) }),
       macs.length > 0 && devicePicker(macs, st.device, now, (id) => { st.device = id; loadSessions().catch(handleLoadError) }, true),
       el('input', { class: 'search', type: 'search', placeholder: tr('搜索标题、项目或模型'), value: state.search, 'aria-label': tr('搜索标题、项目或模型'),
         oninput: (e) => { state.search = e.target.value; const list = document.getElementById('session-results'); list.replaceChildren(sessionList(filteredSessions(), now)) } })),
@@ -342,7 +361,7 @@ function renderSessions(now) {
     st.next && el('button', { class: 'btn secondary small more', type: 'button', text: tr('加载更多'), onclick: () => loadSessions(true).catch(handleLoadError) }))
 }
 
-function filteredSessions() { const q = state.search.trim().toLowerCase(); return state.sessions.list.filter((s) => !q || [s.title, s.project, s.model, modelName(s.model), s.device_name].some((v) => v?.toLowerCase().includes(q))) }
+function filteredSessions() { const q = state.search.trim().toLowerCase(); return state.sessions.list.filter((s) => !q || [s.title, s.project, sourceLabel(s.source), s.model, modelName(s.model), s.device_name].some((v) => v?.toLowerCase().includes(q))) }
 
 const sessionsKey = () => `${state.sessions.status}|${state.sessions.device}|${state.sessionSource}`
 
@@ -372,7 +391,7 @@ function renderDetail(now) {
   const t = { in: s.tokens_in, out: s.tokens_out, cr: s.tokens_cache_read, cw: s.tokens_cache_write }
   const rows = [
     ['项目', s.project],
-    ['来源', s.source === 'codex' ? 'Codex' : 'Claude Code'],
+    ['来源', sourceLabel(s.source)],
     ['设备', s.device_name || '—'],
     ['模型', modelName(s.model) || '—'],
     ['状态', s.status_detail ? `${tr((STATUS[s.status] || [s.status])[0])} · ${s.status_detail}` : null],

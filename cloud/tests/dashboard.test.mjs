@@ -19,7 +19,7 @@ function dashboard() {
   const elements = Object.fromEntries(['view', 'shell', 'landing', 'avatar', 'alerts', 'meta'].map((id) => [id, new Element('div')]))
   const saved = new Map(), requests = [], frames = [], intervals = []
   const now = Date.now()
-  const usage = ['claude', 'codex'].map((provider) => ({ provider, device_id: 'mac', device_name: 'MacBook M4 Max', plan: 'Pro', fetched_at: now, limits: [{ kind: 'session', percent: 95, resets_at: now + 3600000 }] }))
+  const usage = ['claude', 'codex', 'gemini'].map((provider) => ({ provider, device_id: 'mac', device_name: 'MacBook M4 Max', plan: 'Pro', fetched_at: now, limits: [{ kind: 'session', percent: 95, resets_at: now + 3600000 }] }))
   const overview = { usage, devices: [{ id: 'mac', name: 'MacBook M4 Max', online: true }], sessions: [] }
   const context = vm.createContext({
     console, Date, Map, Set, Intl, Math, URLSearchParams, String, Number,
@@ -42,16 +42,17 @@ function dashboard() {
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve))
 
-test('概览展示两家额度，Claude 和 Codex 都会产生独立告警', async () => {
+test('概览展示三家额度，Claude、Codex 和 Gemini 都会产生独立告警', async () => {
   const d = dashboard(); await settle()
   assert.match(d.elements.view.textContent, /Claude/)
   assert.match(d.elements.view.textContent, /Codex/)
-  assert.equal(nodes(d.elements.alerts).filter((e) => e.className === 'alert-toast').length, 2)
+  assert.match(d.elements.view.textContent, /Gemini/)
+  assert.equal(nodes(d.elements.alerts).filter((e) => e.className === 'alert-toast').length, 3)
   const dismiss = nodes(d.elements.alerts).find((e) => e.className === 'dismiss')
   dismiss.events.click()
-  assert.equal(nodes(d.elements.alerts).filter((e) => e.className === 'alert-toast').length, 1)
+  assert.equal(nodes(d.elements.alerts).filter((e) => e.className === 'alert-toast').length, 2)
   d.run('checkAlerts(); renderAlerts()')
-  assert.equal(nodes(d.elements.alerts).filter((e) => e.className === 'alert-toast').length, 1)
+  assert.equal(nodes(d.elements.alerts).filter((e) => e.className === 'alert-toast').length, 2)
 })
 test('项目默认全选，清空、单选和全选会改变图表序列', async () => {
   const d = dashboard(); await settle()
@@ -134,17 +135,40 @@ test('会话用量条按列表最大总 token 计算，模型独立显示并可�
   d.run(`state.sessions.list = [
     {id:'a',title:'First',source:'codex',project:'Alpha',model:'gpt-6.1-sol',device_name:'Mac',status:'done',started_at:Date.now()-20000,last_activity_at:Date.now(),tokens_in:10,tokens_out:10,tokens_cache_read:80},
     {id:'b',title:'Second',source:'claude',project:'Beta',model:'claude-opus-5-5',device_name:'Mac',status:'done',started_at:Date.now()-10000,last_activity_at:Date.now(),tokens_in:20,tokens_out:5},
-    {id:'c',title:'Zero',source:'codex',project:'Gamma',model:null,device_name:'Mac',status:'ended',started_at:Date.now()-10000,last_activity_at:Date.now()}
+    {id:'g',title:'Third',source:'gemini',project:'Gamma',model:'gemini-4-neon-high',device_name:'Mac',status:'done',started_at:Date.now()-10000,last_activity_at:Date.now(),tokens_in:30,tokens_out:20},
+    {id:'c',title:'Zero',source:'codex',project:'Delta',model:null,device_name:'Mac',status:'ended',started_at:Date.now()-10000,last_activity_at:Date.now()}
   ]; view.replaceChildren(sessionList(filteredSessions(), Date.now()))`)
   const meters = nodes(d.elements.view).filter((e) => e.attributes.role === 'meter')
-  assert.equal(meters.length, 3)
-  assert.deepEqual(meters.map((e) => e.attributes['aria-valuemax']), ['100', '100', '100'])
-  assert.deepEqual(meters.map((e) => e.children[0].style.cssText), ['width:100%', 'width:25%', 'width:0%'])
-  assert.deepEqual(nodes(d.elements.view).filter((e) => e.className === 'session-model').map((e) => e.textContent), ['GPT-6.1-sol', 'Opus 5.5', '—'])
+  assert.equal(meters.length, 4)
+  assert.deepEqual(meters.map((e) => e.attributes['aria-valuemax']), ['100', '100', '100', '100'])
+  assert.deepEqual(meters.map((e) => e.children[0].style.cssText), ['width:100%', 'width:25%', 'width:50%', 'width:0%'])
+  assert.deepEqual(meters.map((e) => e.className), [
+    'session-token-track source-codex',
+    'session-token-track source-claude',
+    'session-token-track source-gemini',
+    'session-token-track source-codex',
+  ])
+  assert.deepEqual(nodes(d.elements.view).filter((e) => e.className === 'session-source').map((e) => e.textContent), ['Codex', 'Claude Code', 'Gemini', 'Codex'])
+  assert.deepEqual(nodes(d.elements.view).filter((e) => e.className === 'session-model').map((e) => e.textContent), ['GPT-6.1-sol', 'Opus 5.5', 'Gemini 4 Neon (High)', '—'])
   assert.ok(nodes(d.elements.view).some((e) => e.tag === 'a' && e.attributes.href === '#/sessions/b'))
   d.run("state.search='opus 5.5'")
   assert.equal(d.run('filteredSessions().length'), 1)
   assert.equal(d.run('filteredSessions()[0].id'), 'b')
+  d.run("state.search='gemini'")
+  assert.equal(d.run('filteredSessions().length'), 1)
+  assert.equal(d.run('filteredSessions()[0].id'), 'g')
+})
+
+test('会话支持按 Gemini 来源筛选并传递 source=gemini', async () => {
+  const d = dashboard(); await settle()
+  d.context.fetch = async (url) => { d.requests.push(url); return {ok: true, status: 200, json: async () => ({sessions: [], next_cursor: null})} }
+  d.run("location.hash='#/sessions'; state.sessions.key=sessionsKey(); render()")
+  const geminiBtn = nodes(d.elements.view).find((e) => e.tag === 'button' && e.textContent === 'Gemini')
+  assert.ok(geminiBtn)
+  geminiBtn.events.click()
+  await settle()
+  assert.equal(d.run('state.sessionSource'), 'gemini')
+  assert.ok(d.requests.includes('/api/sessions?source=gemini'))
 })
 
 test('会话设备筛选向接口传递 ID，所有设备可恢复且保留分页', async () => {

@@ -55,34 +55,43 @@ async function request(path, body, tok = token, method = body ? 'PUT' : 'GET') {
   return app.request('https://test.local/api' + path, { method, headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) }, { DB }, { waitUntil: () => {} })
 }
 
-test('旧 Claude 数据迁移后保留，同设备可以同时保存两个来源', async () => {
+test('旧 Claude 数据迁移后保留，同设备可以同时保存三个来源', async () => {
   let data = await (await request('/overview')).json()
   assert.equal(data.usage[0].provider, 'claude')
   assert.equal(data.usage[0].limits[0].percent, 42)
-  for (const provider of ['claude', 'codex']) {
-    const res = await request('/ingest/usage', { provider, plan: 'Plus', fetched_at: t, limits: [{ kind: 'session', percent: provider === 'codex' ? 91 : 45, resets_at: t + 7200000 }] })
+  for (const provider of ['claude', 'codex', 'gemini']) {
+    const res = await request('/ingest/usage', { provider, plan: provider === 'codex' ? 'Plus' : 'Pro', fetched_at: t, limits: [{ kind: 'session', percent: provider === 'codex' ? 91 : provider === 'gemini' ? 18.5 : 45, resets_at: t + 7200000 }] })
     assert.equal(res.status, 200)
   }
   data = await (await request('/overview')).json()
-  assert.deepEqual(data.usage.map((u) => u.provider).sort(), ['claude', 'codex'])
+  assert.deepEqual(data.usage.map((u) => u.provider).sort(), ['claude', 'codex', 'gemini'])
   const history = await (await request('/usage-history')).json()
-  assert.deepEqual([...new Set(history.history.map((r) => r.provider))].sort(), ['claude', 'codex'])
+  assert.deepEqual([...new Set(history.history.map((r) => r.provider))].sort(), ['claude', 'codex', 'gemini'])
 })
-test('会话上报保留来源和设备，来源筛选不混入另一家', async () => {
-  const sessions = ['claude', 'codex'].map((source) => ({ id: source + '-test', source, project: 'quotlet', title: 'Example', model: source === 'codex' ? 'gpt-6.1-sol' : 'claude-opus-5-5', status: 'running', status_at: t, started_at: t, last_activity_at: t }))
+test('会话上报保留来源和设备，来源筛选不混入其他提供方', async () => {
+  const sessions = ['claude', 'codex', 'gemini'].map((source) => ({
+    id: source + '-test', source, project: 'quotlet', title: 'Example',
+    model: source === 'codex' ? 'gpt-6.1-sol' : source === 'gemini' ? 'gemini-4-neon-high' : 'claude-opus-5-5',
+    status: 'running', status_at: t, started_at: t, last_activity_at: t,
+  }))
   assert.equal((await request('/ingest/sessions', { sessions }, token, 'POST')).status, 200)
-  const data = await (await request('/sessions?source=codex')).json()
-  assert.equal(data.sessions.length, 1)
-  assert.equal(data.sessions[0].source, 'codex')
-  assert.equal(data.sessions[0].device_name, 'MacBook M4 Max')
+  for (const source of ['codex', 'gemini']) {
+    const data = await (await request('/sessions?source=' + source)).json()
+    assert.equal(data.sessions.length, 1)
+    assert.equal(data.sessions[0].source, source)
+    assert.equal(data.sessions[0].device_name, 'MacBook M4 Max')
+  }
 })
 test('项目每日趋势与来源统计一致，其他账号不能读取数据', async () => {
-  const rows = ['claude', 'codex'].map((source, i) => ({ day: '2026-11-18', source, project: 'quotlet', model: source, tokens_in: 10, tokens_out: (i + 1) * 100, requests: 1 }))
+  const rows = ['claude', 'codex', 'gemini'].map((source, i) => ({ day: '2026-11-18', source, project: 'quotlet', model: source, tokens_in: 10, tokens_out: (i + 1) * 100, requests: 1 }))
   assert.equal((await request('/ingest/daily', { full: true, rows })).status, 200)
   const stats = await (await request('/stats?from=2026-11-18&source=codex')).json()
   assert.equal(stats.daily[0].total, 210)
   assert.equal(stats.project_daily[0].tokens_out, 200)
   assert.equal(stats.projects[0].total, stats.project_daily[0].total)
+  const geminiStats = await (await request('/stats?from=2026-11-18&source=gemini')).json()
+  assert.equal(geminiStats.daily[0].total, 310)
+  assert.equal(geminiStats.project_daily[0].tokens_out, 300)
   assert.equal((await (await request('/overview', null, other)).json()).usage.length, 0)
   assert.equal((await (await request('/usage-history', null, other)).json()).history.length, 0)
   assert.equal((await (await request('/sessions', null, other)).json()).sessions.length, 0)
